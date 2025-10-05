@@ -1,5 +1,6 @@
 Reddit API (for personal use):
 
-ClientId: xzHHafIoDelE3PJLw6yNHg
+ClientId: Stored in GitHub Codespaces secrets under REDDIT_API_ID
 
 Secret: Stored in GitHub Codespaces secrets under REDDIT_API_SECRET
+
