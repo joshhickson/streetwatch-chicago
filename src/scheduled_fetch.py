@@ -2,29 +2,24 @@ import praw
 import os
 import time
 from datetime import datetime
-from src.processing import process_sighting_text, debug_log
+from src.processing import process_sighting_text
+from src.logger import log # Import our new centralized logger
 
 # --- Reddit API Configuration ---
-# Credentials will be stored as GitHub secrets and passed as environment variables
 CLIENT_ID = os.getenv("REDDIT_API_ID")
 CLIENT_SECRET = os.getenv("REDDIT_API_SECRET")
-# A descriptive user agent is required by Reddit's API rules.
 USER_AGENT = os.getenv("REDDIT_USER_AGENT", "StreetWatchBot:v1.0 by /u/YourUsername")
 
 # --- Search Configuration ---
 SUBREDDITS = ['chicago', 'AskChicago']
 KEYWORDS = ['ice', 'cbp', 'cpd', 'border patrol', 'raid', 'checkpoint']
 AGENCY_STRING = 'ICE, CBP, CPD'
-# Search for posts within the last hour. This is suitable for an hourly cron job.
-SEARCH_WINDOW_SECONDS = 3600
+SEARCH_WINDOW_SECONDS = 3600 # Suitable for an hourly cron job.
 
 def initialize_reddit():
-    """
-    Initializes and returns a PRAW Reddit instance.
-    Returns None if credentials are not configured.
-    """
+    """Initializes and returns a PRAW Reddit instance."""
     if not CLIENT_ID or not CLIENT_SECRET:
-        debug_log("CRITICAL: Reddit API credentials (REDDIT_API_ID, REDDIT_API_SECRET) are not set.")
+        log.critical("CRITICAL: Reddit API credentials (REDDIT_API_ID, REDDIT_API_SECRET) are not set. Halting process.")
         return None
 
     try:
@@ -33,58 +28,53 @@ def initialize_reddit():
             client_secret=CLIENT_SECRET,
             user_agent=USER_AGENT
         )
-        # A simple check to ensure the connection is valid
-        debug_log(f"Reddit instance created. Read-only status: {reddit.read_only}")
+        log.info(f"PRAW Reddit instance created. Read-only status: {reddit.read_only}")
         return reddit
     except Exception as e:
-        debug_log(f"Error initializing PRAW Reddit instance: {e}")
+        log.critical(f"Error initializing PRAW Reddit instance: {e}", exc_info=True)
         return None
 
 def fetch_and_process_reddit_data():
-    """
-    Fetches new posts from specified subreddits based on keywords and processes them.
-    """
-    debug_log("--- Starting scheduled Reddit data fetch ---")
+    """Fetches new posts from specified subreddits based on keywords and processes them."""
+    log.info("--- Starting scheduled Reddit data fetch ---")
     reddit = initialize_reddit()
     if not reddit:
-        debug_log("Halting fetch process due to missing Reddit credentials.")
         return
 
     processed_permalinks = set()
     current_time_utc = datetime.utcnow().timestamp()
+    total_new_sightings = 0
 
     for sub_name in SUBREDDITS:
         try:
             subreddit = reddit.subreddit(sub_name)
-            debug_log(f"Searching subreddit: r/{sub_name}")
+            log.info(f"Searching subreddit: r/{sub_name}")
 
-            # Combine keywords into a single search query. PRAW handles the OR logic.
             search_query = ' OR '.join(f'"{k}"' for k in KEYWORDS)
 
-            # Use sort='new' and a time_filter to narrow down results from the API
             for post in subreddit.search(search_query, sort='new', time_filter='hour'):
-                # Check if the post is within our precise time window and not already processed in this run
                 if (current_time_utc - post.created_utc) < SEARCH_WINDOW_SECONDS and post.permalink not in processed_permalinks:
 
                     full_text = f"Title: {post.title}. Body: {post.selftext}"
-                    debug_log(f"Found potential sighting in post: {post.permalink}")
+                    log.info(f"Found potential sighting in post: https://www.reddit.com{post.permalink}")
 
-                    # Use the refactored function to process the sighting
-                    process_sighting_text(
+                    new_sightings_count = process_sighting_text(
                         post_text=full_text,
                         source_url=f"https://www.reddit.com{post.permalink}",
                         agency=AGENCY_STRING
                     )
 
-                    processed_permalinks.add(post.permalink)
+                    if new_sightings_count > 0:
+                        log.info(f"Successfully processed {new_sightings_count} new sightings from post.")
+                        total_new_sightings += new_sightings_count
 
-                    # Be a good API citizen and sleep between processing posts
-                    time.sleep(2)
+                    processed_permalinks.add(post.permalink)
+                    time.sleep(2) # Be a good API citizen
 
         except Exception as e:
-            debug_log(f"An error occurred while processing subreddit r/{sub_name}: {e}")
+            log.error(f"An error occurred while processing subreddit r/{sub_name}: {e}", exc_info=True)
 
-    debug_log("--- Finished scheduled Reddit data fetch ---")
+    log.info(f"--- Finished scheduled Reddit data fetch. Total new sightings found: {total_new_sightings} ---")
 
 if __name__ == '__main__':
     fetch_and_process_reddit_data()

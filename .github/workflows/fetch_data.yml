@@ -8,7 +8,6 @@ on:
   workflow_dispatch:
 
   # Runs the workflow on a schedule. This is set to run every hour.
-  # The schedule is in UTC. '0 * * * *' means at minute 0 of every hour.
   schedule:
     - cron: '0 * * * *'
 
@@ -23,40 +22,38 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.10' # Specify a stable Python version
+          python-version: '3.10'
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Download spaCy model
+      - name: Download spaCy base model
+        # This is needed by the training script
         run: python -m spacy download en_core_web_sm
 
+      - name: Build Custom NER Model
+        # This step builds our custom model from the latest training data.
+        # The model is built into the 'models/' directory, which is git-ignored.
+        run: |
+          export PYTHONPATH=.
+          python src/train_ner.py
+
       - name: Run data fetching script
-        # This step runs the Python script to fetch and process data.
-        # It uses secrets to securely pass API keys as environment variables.
-        # IMPORTANT: You must configure these secrets in your GitHub repository settings.
+        # This step runs the Python script to fetch and process data using the
+        # freshly built custom model.
         env:
+          PYTHONPATH: .
           REDDIT_API_ID: ${{ secrets.REDDIT_API_ID }}
           REDDIT_API_SECRET: ${{ secrets.REDDIT_API_SECRET }}
           GOOGLE_GEOCODE_API_KEY: ${{ secrets.GOOGLE_GEOCODE_API_KEY }}
-          REDDIT_USER_AGENT: "StreetWatchBot:v1.0 (by /u/YourUsername)" # Customize if needed
+          REDDIT_USER_AGENT: "StreetWatchBot:v1.0 (by /u/YourUsername)"
         run: python src/scheduled_fetch.py
 
-      - name: Commit and push if data changed
-        # This step checks if the map_data.csv file has been modified.
-        # If it has, it commits the changes and pushes them to the main branch.
-        run: |
-          git config --global user.name 'github-actions[bot]'
-          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-
-          # Check if there are changes to commit
-          if [[ -n $(git status --porcelain data/map_data.csv) ]]; then
-            git add data/map_data.csv src/debug.log
-            git commit -m "Automated data update: New sightings added"
-            git push
-            echo "Data changes committed and pushed."
-          else
-            echo "No new data to commit."
-          fi
+      - name: Upload Logs as Artifact
+        # If the workflow runs, upload the log file for debugging purposes.
+        uses: actions/upload-artifact@v3
+        with:
+          name: execution-logs
+          path: logs/
