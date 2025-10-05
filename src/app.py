@@ -24,17 +24,38 @@ except Exception as e:
     nlp = None
 
 # Constants
-GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "YOUR_API_KEY_HERE")
+GOOGLE_API_KEY = os.getenv("GOOGLE_GEOCODE_API_KEY")
+if not GOOGLE_API_KEY:
+    debug_log("CRITICAL: GOOGLE_GEOCODE_API_KEY environment variable not set.")
+
 DATA_FILE = 'data/map_data.csv'
 DEDUPLICATION_DISTANCE_METERS = 200
 DEDUPLICATION_TIME_HOURS = 1
 
 def geocode_location(location_text):
     debug_log(f"Geocoding location: {location_text}")
-    if "Chicago" in location_text:
-        debug_log(f"Simulating coordinates for {location_text}")
-        return {"lat": 41.8781, "lng": -87.6298}
-    return None
+    if not GOOGLE_API_KEY:
+        debug_log("Google API key not configured. Cannot geocode.")
+        return None
+
+    params = {
+        'address': location_text,
+        'key': GOOGLE_API_KEY,
+    }
+    try:
+        response = requests.get('https://maps.googleapis.com/maps/api/geocode/json', params=params)
+        response.raise_for_status()  # Raise an exception for bad status codes
+        results = response.json().get('results')
+        if results:
+            location = results[0]['geometry']['location']
+            debug_log(f"Geocoded {location_text} to {location}")
+            return {"lat": location['lat'], "lng": location['lng']}
+        else:
+            debug_log(f"No results found for {location_text}")
+            return None
+    except requests.exceptions.RequestException as e:
+        debug_log(f"Failed to geocode {location_text}. Error: {e}")
+        return None
 
 def is_duplicate(new_sighting, existing_sightings):
     """
