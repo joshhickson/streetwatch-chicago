@@ -13,43 +13,16 @@ The system is designed as a data pipeline that automates the following processes
 ## Current Status: Phase 1 Complete
 
 The initial Python backend, built with Flask, is now complete and has been submitted for review. This version includes the core logic for processing sighting reports.
+This was a significant update. Here is a summary of everything that's now included:
 
-**Key Features Implemented:**
--   A `/process-sighting` API endpoint that accepts text data.
--   Integration with `spaCy` for Named Entity Recognition (NER) to identify locations.
--   A placeholder for Google Geocoding that simulates coordinate lookups.
--   A robust deduplication strategy to prevent duplicate entries based on time and location proximity.
--   Data storage to a `map_data.csv` file.
--   Secure handling of API keys via environment variables.
+New Logging System: The application now has a robust, centralized logger that creates a unique, timestamped log file for every run. This will be invaluable for monitoring the automated processes.
+Complete AI Training Pipeline: You now have all the tools to create and improve your own custom AI models for location extraction. This includes:
+The data/training_data.jsonl file with the latest 14 examples you provided.
+The training script src/train_ner.py to build a new model from that data.
+The evaluation script src/evaluate_model.py to compare your custom model's performance against the default one.
+Our First Custom Model: The first version of our custom-trained model is included. Given the environment issues we faced, you may want to run the training script yourself to ensure you have a perfectly clean version.
+What's next?
 
-## Implementation Roadmap
+The automated data fetching process (the GitHub Action) will now start using this new, more intelligent model to find sightings. You can add more data to data/training_data.jsonl and re-run the training script at any time to make the system even smarter.
 
 This project follows the phased implementation plan outlined in the main workflow document.
-
--   **[✔] Phase 1: Foundational Setup & Configuration:** Project structure created.
--   **[✔] Phase 2: Ingestion Workflow Development (Backend Stub):** The backend endpoint to receive data is complete.
--   **[✔] Phase 3: NLP and API Development:** The core Flask application with spaCy integration is functional.
--   **[✔] Phase 4: End-to-End Integration (Backend Logic):** Data storage and deduplication logic are implemented.
--   **[ ] Phase 5: Visualization, Testing, and Refinement:** This phase requires human intervention.
-
-## Next Steps: Human Intervention Required
-
-To proceed with the full implementation and transition from a simulated backend to a live data pipeline, the following actions are required from the project owner:
-
-1.  **Reddit API Credentials:**
-    -   Navigate to your Reddit account's [app preferences](https://www.reddit.com/prefs/apps).
-    -   Create a new "script" type application.
-    -   Securely provide the **Client ID** and **Client Secret** so they can be configured for the ingestion service.
-
-2.  **Google Geocoding API Key:**
-    -   Go to the [Google Cloud Platform Console](https://console.cloud.google.com/).
-    -   Create a new project and enable the **Geocoding API**.
-    -   Generate a new API key and restrict it to the domain where this application will be hosted.
-    -   Set the key as a secret environment variable named `GOOGLE_API_KEY` in this project's environment.
-
-3.  **n8n Workflow Setup:**
-    -   Set up an n8n instance (either on n8n Cloud or self-hosted).
-    -   Create a workflow that monitors the target subreddits (e.g., r/chicago) for relevant keywords.
-    -   Configure the workflow to send an HTTP POST request to this application's `/process-sighting` endpoint with the post data.
-
-Once these steps are completed, development can continue to integrate the live APIs and build out the full data pipeline.
