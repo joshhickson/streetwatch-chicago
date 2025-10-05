@@ -2,7 +2,7 @@ import praw
 import os
 import time
 from datetime import datetime
-from processing import process_sighting_text, debug_log
+from src.processing import process_sighting_text, debug_log
 
 # --- Reddit API Configuration ---
 # Credentials will be stored as GitHub secrets and passed as environment variables

@@ -1,5 +1,5 @@
 from flask import Flask, request, jsonify
-from processing import process_sighting_text, debug_log
+from src.processing import process_sighting_text, debug_log
 
 app = Flask(__name__)
 

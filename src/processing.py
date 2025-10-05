@@ -10,13 +10,26 @@ def debug_log(message):
     with open('src/debug.log', 'a') as f:
         f.write(f"{datetime.now()}: {message}\n")
 
-# Load the spaCy model
-try:
-    nlp = spacy.load("en_core_web_sm")
-    debug_log("spaCy model 'en_core_web_sm' loaded successfully.")
-except Exception as e:
-    debug_log(f"Error loading spaCy model: {e}")
-    nlp = None
+# Define model paths
+CUSTOM_MODEL_PATH = 'models/custom_ner_model/model-best'
+
+# Load the spaCy model, preferring the custom model if it exists.
+nlp = None
+if os.path.exists(CUSTOM_MODEL_PATH):
+    try:
+        nlp = spacy.load(CUSTOM_MODEL_PATH)
+        debug_log(f"Custom spaCy model loaded successfully from {CUSTOM_MODEL_PATH}.")
+    except Exception as e:
+        debug_log(f"Error loading custom spaCy model from {CUSTOM_MODEL_PATH}: {e}")
+
+if nlp is None:
+    debug_log("Custom model not found or failed to load. Falling back to default 'en_core_web_sm' model.")
+    try:
+        nlp = spacy.load("en_core_web_sm")
+        debug_log("Default spaCy model 'en_core_web_sm' loaded successfully.")
+    except Exception as e:
+        debug_log(f"CRITICAL: Failed to load even the default spaCy model: {e}")
+        # nlp remains None
 
 # Constants
 GOOGLE_API_KEY = os.getenv("GOOGLE_GEOCODE_API_KEY")
@@ -113,7 +126,8 @@ def process_sighting_text(post_text, source_url, agency='ICE'):
 
 
     doc = nlp(post_text)
-    locations = [ent.text for ent in doc.ents if ent.label_ in ["GPE", "LOC"]]
+    # Look for our custom label first, but also accept the default spaCy location labels.
+    locations = [ent.text for ent in doc.ents if ent.label_ in ["CHI_LOCATION", "GPE", "LOC"]]
     debug_log(f"Extracted locations: {locations}")
 
     processed_count = 0
