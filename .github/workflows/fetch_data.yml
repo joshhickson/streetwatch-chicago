@@ -1,0 +1,62 @@
+# This GitHub Actions workflow automates the process of fetching new law enforcement
+# sightings from Reddit, processing them, and updating the map data.
+
+name: Fetch and Update Map Data
+
+on:
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+  # Runs the workflow on a schedule. This is set to run every hour.
+  # The schedule is in UTC. '0 * * * *' means at minute 0 of every hour.
+  schedule:
+    - cron: '0 * * * *'
+
+jobs:
+  fetch-data:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10' # Specify a stable Python version
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Download spaCy model
+        run: python -m spacy download en_core_web_sm
+
+      - name: Run data fetching script
+        # This step runs the Python script to fetch and process data.
+        # It uses secrets to securely pass API keys as environment variables.
+        # IMPORTANT: You must configure these secrets in your GitHub repository settings.
+        env:
+          REDDIT_API_ID: ${{ secrets.REDDIT_API_ID }}
+          REDDIT_API_SECRET: ${{ secrets.REDDIT_API_SECRET }}
+          GOOGLE_GEOCODE_API_KEY: ${{ secrets.GOOGLE_GEOCODE_API_KEY }}
+          REDDIT_USER_AGENT: "StreetWatchBot:v1.0 (by /u/YourUsername)" # Customize if needed
+        run: python src/scheduled_fetch.py
+
+      - name: Commit and push if data changed
+        # This step checks if the map_data.csv file has been modified.
+        # If it has, it commits the changes and pushes them to the main branch.
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+
+          # Check if there are changes to commit
+          if [[ -n $(git status --porcelain data/map_data.csv) ]]; then
+            git add data/map_data.csv src/debug.log
+            git commit -m "Automated data update: New sightings added"
+            git push
+            echo "Data changes committed and pushed."
+          else
+            echo "No new data to commit."
+          fi
