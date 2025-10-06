@@ -10,6 +10,16 @@ The system is designed as a data pipeline that automates the following processes
 3.  **Storage & Formatting:** Stores the processed data in a structured CSV format, ready for visualization.
 4.  **Visualization:** The generated CSV can be imported into Google MyMaps to create an interactive map of sightings.
 
+## Important Note for Cloning (Git LFS)
+
+This repository uses [Git LFS (Large File Storage)](https://git-lfs.github.com/) to manage the large model files located in the `models/` directory.
+
+After cloning the repository, you **must** run the following command to download the model files:
+```bash
+git lfs pull
+```
+This will ensure that the application has the necessary models to function correctly. Both human and AI developers need to perform this step.
+
 ## Current Status: Phase 1 Complete
 
 The initial Python backend, built with Flask, is now complete and has been submitted for review. This version includes the core logic for processing sighting reports.
