@@ -26,3 +26,25 @@ What's next?
 The automated data fetching process (the GitHub Action) will now start using this new, more intelligent model to find sightings. You can add more data to data/training_data.jsonl and re-run the training script at any time to make the system even smarter.
 
 This project follows the phased implementation plan outlined in the main workflow document.
+
+## Progress Update: 2025-10-05
+
+The custom NER model has been successfully re-trained using the latest data in `data/training_data.jsonl`. The trained model files are now included in the `models/` directory and will be checked into version control.
+
+**Key Accomplishments:**
+*   **Model Trained:** The spaCy NER model was trained successfully.
+*   **Repository Updated:** The `.gitignore` file was updated to ensure the trained model is committed to the repository.
+*   **Tests Passed:** The application's test suite (`test_endpoint.py`) was executed and all tests passed, verifying the functionality with the new model.
+
+**Note:** An attempt to get an automated code review failed because the trained model files are too large for the review tool to handle.
+
+### Next Steps
+
+#### For Jules (AI Assistant):
+*   Awaiting feedback from the human-in-the-loop.
+*   If approved, proceed with submitting the changes to the repository.
+
+#### For Humans (Project Team):
+*   Please review the changes.
+*   Advise on whether to proceed with committing the changes without a formal code review.
+*   To further improve accuracy, consider annotating more examples in `data/training_data.jsonl`. The model can be easily retrained by running `python -m src.train_ner`.
