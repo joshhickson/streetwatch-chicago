@@ -11,7 +11,7 @@ CLIENT_SECRET = os.getenv("REDDIT_API_SECRET")
 USER_AGENT = os.getenv("REDDIT_USER_AGENT", "StreetWatchBot:v1.0 by /u/YourUsername")
 
 # --- Search Configuration ---
-SUBREDDITS = ['chicago', 'AskChicago']
+SUBREDDITS = ['chicago', 'AskChicago', 'illinois', 'eyesonice']
 KEYWORDS = ['ice', 'cbp', 'cpd', 'border patrol', 'raid', 'checkpoint']
 AGENCY_STRING = 'ICE, CBP, CPD'
 SEARCH_WINDOW_SECONDS = 3600 # Suitable for an hourly cron job.
