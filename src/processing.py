@@ -118,13 +118,16 @@ def process_sighting_text(post_text, source_url, post_timestamp_utc, agency='ICE
 
     processed_count = 0
     for loc in locations:
-        coords = geocode_location(loc, context=context)
+        # Normalize the location name to title case to prevent near-duplicates
+        normalized_loc = loc.title()
+
+        coords = geocode_location(normalized_loc, context=context)
         if coords:
             # Use the post's original creation timestamp
             timestamp_iso = datetime.fromtimestamp(post_timestamp_utc).isoformat() + 'Z'
 
             data_row = {
-                'Title': f"Sighting near {loc}",
+                'Title': f"Sighting near {normalized_loc}",
                 'Latitude': coords['lat'],
                 'Longitude': coords['lng'],
                 'Timestamp': timestamp_iso,
@@ -135,5 +138,7 @@ def process_sighting_text(post_text, source_url, post_timestamp_utc, agency='ICE
             }
             write_to_csv(data_row)
             processed_count += 1
+            log.info(f"Successfully processed first valid location '{normalized_loc}'. Halting search for this source.")
+            break # Exit after processing the first valid location
 
     return processed_count

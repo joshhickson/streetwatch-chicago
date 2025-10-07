@@ -1,2 +1,2 @@
 Title,Latitude,Longitude,Timestamp,Description,SourceURL,VideoURL,Agency
-Sighting near Chicago,41.88325,-87.6323879,2025-10-07T17:00:30.812662Z,"ICE sighting reported at Millennium Park, Chicago.",http://example.com/sighting-report,,ICE
+Sighting near Wrigleyville,41.949062,-87.656516,2025-10-07T17:10:49.860943Z,ICE sighting reported near wrigleyville and also chicago.,http://example.com/sighting-report-multiple-locations,,ICE

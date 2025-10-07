@@ -6,8 +6,8 @@ import time
 # --- Test Configuration ---
 URL = "http://localhost:8080/process-sighting"
 TEST_DATA = {
-    "post_text": "ICE sighting reported at Millennium Park, Chicago.",
-    "source_url": "http://example.com/sighting-report"
+    "post_text": "ICE sighting reported near wrigleyville and also chicago.",
+    "source_url": "http://example.com/sighting-report-multiple-locations"
 }
 CSV_FILE = 'data/map_data.csv'
 LOG_FILE = 'src/debug.log'
@@ -44,14 +44,29 @@ def run_test():
     if os.path.exists(CSV_FILE):
         print(f"SUCCESS: '{CSV_FILE}' created.")
         with open(CSV_FILE, 'r') as f:
-            content = f.read()
+            content = f.read().strip()
+            lines = content.splitlines()
             print("CSV Content:")
             print(content)
-            # Check if the core data is present, allowing for slight variations in geocoding results
-            if "Sighting near Chicago" in content and "ICE sighting reported at Millennium Park, Chicago" in content and "41.8" in content:
-                 print("--- Test Result: SUCCESS (CSV content verified) ---")
+
+            # Verification checks:
+            # 1. There should be exactly 2 lines: one header and one data row.
+            # 2. The Title should be for the first location found ("Wrigleyville"), correctly normalized.
+            # 3. The latitude should be correct for Wrigleyville (approx 41.9).
+            is_correct_line_count = len(lines) == 2
+            is_title_correct = "Sighting near Wrigleyville" in lines[1]
+            is_lat_correct = "41.9" in lines[1]
+
+            if is_correct_line_count and is_title_correct and is_lat_correct:
+                 print("--- Test Result: SUCCESS (CSV content verified: Single entry, normalized location) ---")
             else:
-                 print("!!! TEST FAILED: CSV content seems incorrect. ---")
+                 print("!!! TEST FAILED: CSV content verification failed.")
+                 if not is_correct_line_count:
+                     print(f"    - FAIL: Expected 2 lines, but found {len(lines)}.")
+                 if not is_title_correct:
+                     print(f"    - FAIL: Title 'Sighting near Wrigleyville' not found in '{lines[1]}'")
+                 if not is_lat_correct:
+                     print(f"    - FAIL: Latitude for Wrigleyville (41.9...) not found in '{lines[1]}'")
     else:
         print(f"!!! TEST FAILED: '{CSV_FILE}' was not created. ---")
 
