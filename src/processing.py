@@ -35,15 +35,21 @@ if not GOOGLE_API_KEY:
 
 DATA_FILE = 'data/map_data.csv'
 
-def geocode_location(location_text):
-    """Converts a location string to geographic coordinates using Google Geocoding API."""
-    log.info(f"Geocoding location: '{location_text}'")
+def geocode_location(location_text, context=None):
+    """
+    Converts a location string to geographic coordinates using Google Geocoding API.
+    Appends context (e.g., 'Chicago, IL') to the query if provided.
+    """
+    # Construct the full address string with context if available
+    full_address = f"{location_text}, {context}" if context and context.strip() else location_text
+    log.info(f"Geocoding location: '{full_address}'")
+
     if not GOOGLE_API_KEY:
         log.error("Google API key not configured. Cannot geocode.")
         return None
 
     params = {
-        'address': location_text,
+        'address': full_address,
         'key': GOOGLE_API_KEY,
     }
     try:
@@ -52,13 +58,13 @@ def geocode_location(location_text):
         results = response.json().get('results')
         if results:
             location = results[0]['geometry']['location']
-            log.info(f"Geocoded '{location_text}' to {location}")
+            log.info(f"Geocoded '{full_address}' to {location}")
             return {"lat": location['lat'], "lng": location['lng']}
         else:
-            log.warning(f"No geocoding results found for '{location_text}'")
+            log.warning(f"No geocoding results found for '{full_address}'")
             return None
     except requests.exceptions.RequestException as e:
-        log.error(f"Failed to geocode '{location_text}'. Error: {e}", exc_info=True)
+        log.error(f"Failed to geocode '{full_address}'. Error: {e}", exc_info=True)
         return None
 
 def write_to_csv(data_row):
@@ -79,12 +85,12 @@ def write_to_csv(data_row):
     except Exception as e:
         log.error(f"Error writing to CSV file {DATA_FILE}: {e}", exc_info=True)
 
-def process_sighting_text(post_text, source_url, post_timestamp_utc, agency='ICE'):
+def process_sighting_text(post_text, source_url, post_timestamp_utc, agency='ICE', context=None):
     """
     Processes the text of a sighting, geocodes it, and stores it.
     Deduplicates based on the source URL to avoid processing the same post multiple times.
     """
-    log.info(f"Processing text from source: {source_url}")
+    log.info(f"Processing text from source: {source_url} with context: {context}")
 
     if not nlp:
         log.error("spaCy model not loaded, cannot process text.")
@@ -112,7 +118,7 @@ def process_sighting_text(post_text, source_url, post_timestamp_utc, agency='ICE
 
     processed_count = 0
     for loc in locations:
-        coords = geocode_location(loc)
+        coords = geocode_location(loc, context=context)
         if coords:
             # Use the post's original creation timestamp
             timestamp_iso = datetime.fromtimestamp(post_timestamp_utc).isoformat() + 'Z'

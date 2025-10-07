@@ -17,6 +17,18 @@ KEYWORDS = [
 ]
 AGENCY_STRING = 'ICE, CBP'
 
+def _get_geo_context_from_query(query):
+    """
+    Extracts a geographic context string from the search query.
+    This is a simple implementation based on keywords.
+    """
+    query_lower = query.lower()
+    if "chicago" in query_lower:
+        return "Chicago, IL"
+    if "illinois" in query_lower:
+        return "Illinois, USA"
+    return None # Default case
+
 def fetch_and_process_gcp_data():
     """
     Fetches new search results from a Google Custom Search Engine,
@@ -65,11 +77,15 @@ def fetch_and_process_gcp_data():
                 # in the search API results.
                 post_timestamp_utc = datetime.now().timestamp()
 
+                # Get geo context and pass it to the processing function
+                geo_context = _get_geo_context_from_query(query)
+
                 new_sightings_count = process_sighting_text(
                     post_text=full_text,
                     source_url=source_url,
                     post_timestamp_utc=post_timestamp_utc,
-                    agency=AGENCY_STRING
+                    agency=AGENCY_STRING,
+                    context=geo_context
                 )
 
                 if new_sightings_count > 0:

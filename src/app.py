@@ -1,4 +1,5 @@
 from flask import Flask, request, jsonify
+from datetime import datetime
 from src.processing import process_sighting_text
 from src.logger import log # Import our new centralized logger
 
@@ -21,7 +22,18 @@ def handle_process_sighting():
 
     # Call the refactored processing function
     try:
-        processed_count = process_sighting_text(post_text, source_url)
+        # Get the current time as the timestamp
+        post_timestamp_utc = datetime.now().timestamp()
+
+        # The context is not provided in this simple endpoint, so we pass None.
+        # The test data is specific enough ("... at Millennium Park, Chicago.")
+        # that it should be geocoded correctly without additional context.
+        processed_count = process_sighting_text(
+            post_text=post_text,
+            source_url=source_url,
+            post_timestamp_utc=post_timestamp_utc,
+            context=None
+        )
         response_message = f"Successfully processed and stored {processed_count} new sightings."
         log.info(f"Sending response: {response_message}")
         return jsonify({"message": response_message})
