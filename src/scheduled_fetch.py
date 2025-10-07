@@ -61,6 +61,7 @@ def fetch_and_process_reddit_data():
                     new_sightings_count = process_sighting_text(
                         post_text=full_text,
                         source_url=f"https://www.reddit.com{post.permalink}",
+                        post_timestamp_utc=post.created_utc,
                         agency=AGENCY_STRING
                     )
 

@@ -2,8 +2,7 @@ import spacy
 import requests
 import csv
 import os
-from datetime import datetime, timedelta
-from haversine import haversine, Unit
+from datetime import datetime
 from src.logger import log # Import our new centralized logger
 
 # --- Model and API Configuration ---
@@ -35,8 +34,6 @@ if not GOOGLE_API_KEY:
     log.critical("CRITICAL: GOOGLE_GEOCODE_API_KEY environment variable not set.")
 
 DATA_FILE = 'data/map_data.csv'
-DEDUPLICATION_DISTANCE_METERS = 200
-DEDUPLICATION_TIME_HOURS = 1
 
 def geocode_location(location_text):
     """Converts a location string to geographic coordinates using Google Geocoding API."""
@@ -64,28 +61,6 @@ def geocode_location(location_text):
         log.error(f"Failed to geocode '{location_text}'. Error: {e}", exc_info=True)
         return None
 
-def is_duplicate(new_sighting, existing_sightings):
-    """Checks if a new sighting is a duplicate of an existing one based on time and distance."""
-    new_coords = (new_sighting['Latitude'], new_sighting['Longitude'])
-    new_time = datetime.fromisoformat(new_sighting['Timestamp'].replace('Z', ''))
-
-    for old_sighting in existing_sightings:
-        try:
-            old_coords = (float(old_sighting['Latitude']), float(old_sighting['Longitude']))
-            old_time = datetime.fromisoformat(old_sighting['Timestamp'].replace('Z', ''))
-
-            distance = haversine(new_coords, old_coords, unit=Unit.METERS)
-            time_diff = abs(new_time - old_time)
-
-            if distance < DEDUPLICATION_DISTANCE_METERS and time_diff < timedelta(hours=DEDUPLICATION_TIME_HOURS):
-                log.info(f"Duplicate found: New sighting at {new_coords} is too close to existing sighting at {old_coords}.")
-                return True
-        except (ValueError, KeyError) as e:
-            log.warning(f"Could not parse existing sighting for deduplication check. Row: {old_sighting}. Error: {e}")
-            continue
-
-    return False
-
 def write_to_csv(data_row):
     """Appends a new data row to the master CSV file."""
     log.info(f"Writing to CSV: {data_row}")
@@ -104,10 +79,10 @@ def write_to_csv(data_row):
     except Exception as e:
         log.error(f"Error writing to CSV file {DATA_FILE}: {e}", exc_info=True)
 
-def process_sighting_text(post_text, source_url, agency='ICE'):
+def process_sighting_text(post_text, source_url, post_timestamp_utc, agency='ICE'):
     """
     Processes the text of a sighting, geocodes it, and stores it.
-    Returns the number of new sightings processed.
+    Deduplicates based on the source URL to avoid processing the same post multiple times.
     """
     log.info(f"Processing text from source: {source_url}")
 
@@ -115,15 +90,21 @@ def process_sighting_text(post_text, source_url, agency='ICE'):
         log.error("spaCy model not loaded, cannot process text.")
         return 0
 
-    existing_sightings = []
+    # --- Deduplication based on Source URL ---
+    existing_source_urls = set()
     if os.path.isfile(DATA_FILE):
-        with open(DATA_FILE, 'r', newline='', encoding='utf-8') as csvfile:
-            try:
+        try:
+            with open(DATA_FILE, 'r', newline='', encoding='utf-8') as csvfile:
                 reader = csv.DictReader(csvfile)
                 for row in reader:
-                    existing_sightings.append(row)
-            except Exception as e:
-                log.error(f"Could not read existing CSV data for deduplication: {e}", exc_info=True)
+                    if 'SourceURL' in row:
+                        existing_source_urls.add(row['SourceURL'])
+        except Exception as e:
+            log.error(f"Could not read existing CSV data for deduplication: {e}", exc_info=True)
+
+    if source_url in existing_source_urls:
+        log.warning(f"Duplicate post: Source {source_url} has already been processed. Skipping.")
+        return 0
 
     doc = nlp(post_text)
     locations = [ent.text for ent in doc.ents if ent.label_ in ["CHI_LOCATION", "GPE", "LOC"]]
@@ -133,21 +114,20 @@ def process_sighting_text(post_text, source_url, agency='ICE'):
     for loc in locations:
         coords = geocode_location(loc)
         if coords:
+            # Use the post's original creation timestamp
+            timestamp_iso = datetime.fromtimestamp(post_timestamp_utc).isoformat() + 'Z'
+
             data_row = {
                 'Title': f"Sighting near {loc}",
                 'Latitude': coords['lat'],
                 'Longitude': coords['lng'],
-                'Timestamp': datetime.utcnow().isoformat() + 'Z',
+                'Timestamp': timestamp_iso,
                 'Description': post_text,
                 'SourceURL': source_url,
                 'VideoURL': '',
                 'Agency': agency
             }
-
-            if not is_duplicate(data_row, existing_sightings):
-                write_to_csv(data_row)
-                processed_count += 1
-            else:
-                log.warning(f"Skipping duplicate sighting: {data_row['Title']}")
+            write_to_csv(data_row)
+            processed_count += 1
 
     return processed_count
