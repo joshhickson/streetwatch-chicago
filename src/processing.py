@@ -3,6 +3,7 @@ import requests
 import csv
 import os
 from datetime import datetime
+from dateparser import search as dateparser_search
 from src.logger import log # Import our new centralized logger
 
 # --- Model and API Configuration ---
@@ -67,6 +68,29 @@ def geocode_location(location_text, context=None):
         log.error(f"Failed to geocode '{full_address}'. Error: {e}", exc_info=True)
         return None
 
+def extract_event_timestamp(text, base_time):
+    """
+    Extracts a timestamp from text using dateparser.
+    Returns a datetime object if a date is found, otherwise None.
+    """
+    log.info(f"Searching for temporal expressions in text, relative to {base_time.isoformat()}")
+    # Use search_dates to find all potential date strings in the text.
+    # PREFER_DATES_FROM: 'past' ensures that "Friday" is interpreted as last Friday, not next Friday.
+    # RELATIVE_BASE: Provides the anchor for relative times like "yesterday" or "2 hours ago".
+    found_dates = dateparser_search.search_dates(
+        text,
+        settings={'PREFER_DATES_FROM': 'past', 'RELATIVE_BASE': base_time}
+    )
+
+    if found_dates:
+        # search_dates returns a list of tuples: (string, datetime_object)
+        first_match_str, first_match_dt = found_dates[0]
+        log.info(f"Found potential event time: '{first_match_str}' -> {first_match_dt.isoformat()}")
+        return first_match_dt
+    else:
+        log.info("No explicit event time found in text.")
+        return None
+
 def write_to_csv(data_row):
     """Appends a new data row to the master CSV file."""
     log.info(f"Writing to CSV: {data_row}")
@@ -123,8 +147,18 @@ def process_sighting_text(post_text, source_url, post_timestamp_utc, agency='ICE
 
         coords = geocode_location(normalized_loc, context=context)
         if coords:
-            # Use the post's original creation timestamp
-            timestamp_iso = datetime.fromtimestamp(post_timestamp_utc).isoformat() + 'Z'
+            # --- Temporal Extraction ---
+            # Convert the post's creation time from a UTC timestamp to a datetime object.
+            post_creation_time = datetime.fromtimestamp(post_timestamp_utc)
+
+            # Try to extract a more specific event time from the text.
+            event_time = extract_event_timestamp(post_text, post_creation_time)
+
+            # If no specific time is found in the text, fall back to the post's creation time.
+            final_timestamp = event_time if event_time else post_creation_time
+
+            # Format the final timestamp into the required ISO format.
+            timestamp_iso = final_timestamp.isoformat() + 'Z'
 
             data_row = {
                 'Title': f"Sighting near {normalized_loc}",

@@ -1,2 +1,2 @@
 Title,Latitude,Longitude,Timestamp,Description,SourceURL,VideoURL,Agency
-Sighting near Wrigleyville,41.949062,-87.656516,2025-10-07T17:10:49.860943Z,ICE sighting reported near wrigleyville and also chicago.,http://example.com/sighting-report-multiple-locations,,ICE
+Sighting near Wrigleyville,41.949062,-87.656516,2025-09-25T00:00:00Z,ICE sighting reported near Wrigleyville on 9/25/25 at 3:30pm. This is a test.,http://example.com/sighting-report-with-timestamp,,ICE

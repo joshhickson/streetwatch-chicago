@@ -4,3 +4,4 @@ Werkzeug<3.0.0
 requests
 haversine==2.8.0
 praw==7.7.1
+dateparser
