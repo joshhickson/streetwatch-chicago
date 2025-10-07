@@ -14,7 +14,7 @@ The pipeline is orchestrated by a GitHub Action that runs on a schedule. It uses
 
 ```mermaid
 graph TD
-    A[GitHub Action Schedule <br> (cron: '0 * * * *')] --> B{Run gcp_fetch.py};
+    A[Hourly GitHub Action Schedule] --> B{Run gcp_fetch.py};
     B --> C{Query Google Custom Search API <br> (Keywords: "ICE Chicago", etc.)};
     C --> D[Search Results <br> (Title, Snippet, URL)];
     D --> E{For each result};
