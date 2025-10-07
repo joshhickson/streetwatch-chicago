@@ -11,10 +11,6 @@ env/
 logs/
 *.log
 
-# Ignore spaCy model files
-# These are large binary files that should not be in version control.
-# They will be generated on-the-fly by the GitHub Action.
-models/
 
 # Ignore user-specific files
 .DS_Store
