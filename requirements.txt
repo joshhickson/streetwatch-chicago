@@ -6,3 +6,5 @@ haversine==2.8.0
 praw==7.7.1
 dateparser
 elasticsearch
+sentence-transformers
+faiss-cpu
