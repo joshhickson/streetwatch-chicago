@@ -32,6 +32,7 @@ _nlp = None
 def get_nlp():
     global _nlp
     if _nlp is None:
+        # Attempt to load the custom model first
         if os.path.exists(CUSTOM_MODEL_PATH):
             try:
                 _nlp = spacy.load(CUSTOM_MODEL_PATH)
@@ -40,12 +41,15 @@ def get_nlp():
             except Exception as e:
                 log.error(f"Error loading custom spaCy model: {e}", exc_info=True)
 
+        # Fallback to the default model if the custom one fails or doesn't exist
         log.warning("Custom model not found or failed to load. Falling back to 'en_core_web_sm'.")
         try:
             _nlp = spacy.load("en_core_web_sm")
             log.info("Default spaCy model 'en_core_web_sm' loaded.")
         except Exception as e:
             log.critical(f"Failed to load default spaCy model: {e}", exc_info=True)
+            # Ensure nlp is None if all loading fails
+            _nlp = None
     return _nlp
 
 _es_client = None
@@ -62,26 +66,21 @@ def get_es_client():
     return _es_client
 
 class MockSbert:
-    """A mock SentenceTransformer for testing purposes."""
-    def get_sentence_embedding_dimension(self):
-        return 5
+    def get_sentence_embedding_dimension(self): return 5
     def encode(self, text):
-        # Create a deterministic "embedding" based on a hash of the text
-        hash_val = int(hashlib.md5(text.encode()).hexdigest(), 16)
+        hash_val = int(hashlib.md5(normalize_text(text).encode()).hexdigest(), 16)
         vec = np.array([hash_val % 100] * 5, dtype='float32')
-        return vec / np.linalg.norm(vec)
+        return vec / np.linalg.norm(vec) if np.linalg.norm(vec) > 0 else vec
 
 _sbert_model = None
 def get_sbert_model():
     global _sbert_model
     if _sbert_model is None:
         if os.getenv('INTEGRATION_TESTING') == 'true':
-            log.info("INTEGRATION_TESTING mode: Using MockSbert.")
             _sbert_model = MockSbert()
         else:
             try:
                 _sbert_model = SentenceTransformer('all-MiniLM-L6-v2')
-                log.info("SentenceTransformer model loaded successfully.")
             except Exception as e:
                 log.critical(f"Failed to load SentenceTransformer model: {e}", exc_info=True)
                 _sbert_model = None
@@ -97,23 +96,17 @@ def get_faiss_index():
             if os.path.exists(FAISS_INDEX_PATH) and os.getenv('INTEGRATION_TESTING') != 'true':
                 try:
                     _faiss_index = faiss.read_index(FAISS_INDEX_PATH)
-                    log.info(f"FAISS index loaded from {FAISS_INDEX_PATH}.")
                 except Exception as e:
-                    log.error(f"Failed to load FAISS index: {e}. A new index will be created.", exc_info=True)
                     _faiss_index = faiss.IndexFlatL2(embedding_dim)
             else:
-                log.info("Initializing a new empty FAISS index.")
                 _faiss_index = faiss.IndexFlatL2(embedding_dim)
     return _faiss_index
 
-# --- Core Functions ---
+# --- Core Processing Logic ---
 def geocode_location(location_text, context=None):
     if os.getenv('INTEGRATION_TESTING') == 'true':
         return {"lat": 41.8781, "lng": -87.6298, "bounding_box": {"northeast": {"lat": 42.023, "lng": -87.524}, "southwest": {"lat": 41.644, "lng": -87.940}}}
-
-    if not GOOGLE_API_KEY:
-        log.error("Google API key not configured. Cannot geocode.")
-        return None
+    if not GOOGLE_API_KEY: return None
     full_address = f"{location_text}, {context}" if context and context.strip() else location_text
     try:
         response = requests.get('https://maps.googleapis.com/maps/api/geocode/json', params={'address': full_address, 'key': GOOGLE_API_KEY})
@@ -140,7 +133,6 @@ def save_faiss_index():
         try:
             os.makedirs(MODELS_DIR, exist_ok=True)
             faiss.write_index(faiss_index, FAISS_INDEX_PATH)
-            log.info(f"FAISS index saved to {FAISS_INDEX_PATH}.")
         except Exception as e:
             log.error(f"Failed to save FAISS index: {e}", exc_info=True)
 
@@ -149,10 +141,7 @@ def find_similar_in_vector_index(embedding):
     if faiss_index is None or faiss_index.ntotal == 0: return False
     query_vector = np.array([embedding], dtype='float32')
     distances, _ = faiss_index.search(query_vector, 1)
-    if distances.size > 0 and distances[0][0] < SIMILARITY_THRESHOLD:
-        log.info(f"Found a semantically similar post with distance {distances[0][0]}.")
-        return True
-    return False
+    return distances.size > 0 and distances[0][0] < SIMILARITY_THRESHOLD
 
 def add_to_vector_index(embedding):
     faiss_index = get_faiss_index()
@@ -195,22 +184,16 @@ def process_sighting_text(post_text, source_url, post_timestamp_utc, agency='ICE
     normalized_post_text = normalize_text(post_text)
     doc_id_hash = hashlib.sha256(f"{source_url}{normalized_post_text}".encode()).hexdigest()
 
-    # Lexical Deduplication
     if os.getenv('INTEGRATION_TESTING') == 'true':
         if os.path.exists(os.path.join(MOCK_ES_DIR, f"{doc_id_hash}.json")): return 0
     else:
         es_client = get_es_client()
-        if not es_client: return 0
-        try:
-            if es_client.exists(index=ES_INDEX, id=doc_id_hash): return 0
-        except Exception: return 0
+        if not es_client or es_client.exists(index=ES_INDEX, id=doc_id_hash): return 0
 
-    # Semantic Deduplication
     sbert_model = get_sbert_model()
     if sbert_model:
         embedding = sbert_model.encode(normalized_post_text)
         if find_similar_in_vector_index(embedding):
-            log.warning(f"Semantically similar post found for source {source_url}. Skipping.")
             return 0
 
     doc = nlp(post_text)
