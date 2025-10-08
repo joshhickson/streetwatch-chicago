@@ -8,6 +8,7 @@ import hashlib
 import shutil
 import faiss
 import numpy as np
+from src.processing import normalize_text
 
 # --- Constants ---
 BASE_URL = "http://localhost:8080"
@@ -154,3 +155,30 @@ def test_custom_ner_model_location_extraction(live_server):
 
     # Verify a file was created, indicating successful processing
     assert len(os.listdir(MOCK_ES_DIR)) == 1
+
+
+def test_video_url_extraction(live_server):
+    """
+    Tests that a video URL is correctly extracted from the post text and
+    stored in the final document.
+    """
+    url = f"{live_server}/process-sighting"
+    youtube_url = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+    test_data = {
+        "post_text": f"A raid happened in Chicago, check out the video: {youtube_url}",
+        "source_url": "http://example.com/sighting-with-video"
+    }
+    response = requests.post(url, json=test_data, timeout=15)
+
+    assert response.status_code == 200
+    assert "1" in response.json()["message"]
+
+    # Verify the content of the stored mock file
+    doc_id = hashlib.sha256(f"{test_data['source_url']}{normalize_text(test_data['post_text'])}".encode()).hexdigest()
+    doc_path = os.path.join(MOCK_ES_DIR, f"{doc_id}.json")
+    assert os.path.exists(doc_path)
+
+    with open(doc_path, 'r') as f:
+        stored_doc = json.load(f)
+
+    assert stored_doc['VideoURL'] == youtube_url

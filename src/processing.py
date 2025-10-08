@@ -4,6 +4,7 @@ import os
 import json
 import string
 import hashlib
+import re
 from datetime import datetime
 from dateparser import search as dateparser_search
 from elasticsearch import Elasticsearch
@@ -26,6 +27,32 @@ SIMILARITY_THRESHOLD = 0.1 # Adjusted for mock embeddings
 def normalize_text(text: str) -> str:
     if not isinstance(text, str): return ""
     return text.lower().translate(str.maketrans('', '', string.punctuation))
+
+def extract_video_url(text: str) -> str | None:
+    """
+    Finds the first URL from a list of common video platforms in a string.
+    """
+    if not isinstance(text, str):
+        return None
+    # Regex to find URLs from YouTube, Streamable, and Reddit's video service
+    url_pattern = re.compile(
+        r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+'
+    )
+    all_urls = url_pattern.findall(text)
+
+    video_platforms = [
+        "youtube.com", "youtu.be",
+        "streamable.com",
+        "v.redd.it"
+    ]
+
+    for url in all_urls:
+        for platform in video_platforms:
+            if platform in url:
+                log.info(f"Found potential video URL: {url}")
+                return url
+
+    return None
 
 # --- Lazy-loaded Clients & Models ---
 _nlp = None
@@ -205,11 +232,13 @@ def process_sighting_text(post_text, source_url, post_timestamp_utc, agency='ICE
 
     if coords:
         final_timestamp = extract_event_timestamp(post_text, datetime.fromtimestamp(post_timestamp_utc)) or datetime.fromtimestamp(post_timestamp_utc)
+        video_url = extract_video_url(post_text) or ""
+
         data_row = {
             'Title': f"{extract_event_trigger(loc_span)} near {loc_span.text.title()}",
             'Latitude': coords['lat'], 'Longitude': coords['lng'],
             'Timestamp': final_timestamp.isoformat() + 'Z',
-            'Description': post_text, 'SourceURL': source_url, 'VideoURL': '',
+            'Description': post_text, 'SourceURL': source_url, 'VideoURL': video_url,
             'Agency': agency, 'Origin': origin,
             'BoundingBox': json.dumps(coords.get('bounding_box')) if coords.get('bounding_box') else ''
         }
