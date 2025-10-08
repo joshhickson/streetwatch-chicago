@@ -1,90 +1,93 @@
 import spacy
 from spacy.tokens import DocBin
+from spacy.training.example import Example
 import json
 from pathlib import Path
 import sys
-import os
+import random
+import shutil
 from src.logger import log # Import our new centralized logger
 
 # --- Configuration ---
 BASE_DIR = Path(__file__).resolve().parent.parent
 TRAINING_DATA_PATH = BASE_DIR / "data" / "training_data.jsonl"
 MODELS_DIR = BASE_DIR / "models"
-CONFIG_PATH = MODELS_DIR / "config.cfg"
-TRAINING_BINARY_PATH = MODELS_DIR / "training_data.spacy"
 MODEL_OUTPUT_PATH = MODELS_DIR / "custom_ner_model"
 
 
-def convert_data_for_training(training_data_path: Path, output_path: Path):
-    """Converts annotated data from JSONL format to spaCy's binary format."""
-    log.info("--- Step 1: Converting data for training ---")
-    if not training_data_path.exists() or training_data_path.stat().st_size == 0:
-        log.error(f"Training data not found or is empty at {training_data_path}. Please provide annotated data.")
+def train_custom_ner_programmatically():
+    """
+    Trains a custom NER model programmatically to avoid potential issues with
+    the config-based training pipeline and model serialization.
+    """
+    log.info("--- Starting programmatic NER model training ---")
+
+    # 1. Load training data
+    log.info(f"Loading training data from {TRAINING_DATA_PATH}")
+    if not TRAINING_DATA_PATH.exists() or TRAINING_DATA_PATH.stat().st_size == 0:
+        log.error(f"Training data not found or is empty at {TRAINING_DATA_PATH}.")
         sys.exit(1)
 
-    nlp = spacy.blank("en")
-    db = DocBin()
-
-    line_count = 0
-    with training_data_path.open("r", encoding="utf-8") as f:
+    training_data = []
+    with TRAINING_DATA_PATH.open("r", encoding="utf-8") as f:
         for line in f:
-            line_count += 1
             try:
-                data = json.loads(line)
-                doc = nlp.make_doc(data['text'])
-                ents = []
-                for span in data.get("spans", []):
-                    span_obj = doc.char_span(span["start"], span["end"], label=span["label"], alignment_mode="contract")
-                    if span_obj is None:
-                        log.warning(f"Skipping entity in line '{data['text']}' - span '{data['text'][span['start']:span['end']]}' is not a valid token boundary.")
-                    else:
-                        ents.append(span_obj)
-                doc.ents = ents
-                db.add(doc)
+                training_data.append(json.loads(line))
             except json.JSONDecodeError:
-                log.error(f"Error decoding JSON on line {line_count}. Please check formatting.")
+                log.error("Error decoding JSON. Please check formatting.")
                 continue
+    log.info(f"Loaded {len(training_data)} training examples.")
 
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    db.to_disk(output_path)
-    log.info(f"Successfully converted {line_count} lines of data to {output_path}")
+    # 2. Create a blank spaCy model and add the NER pipe
+    nlp = spacy.blank("en")
+    log.info("Created blank 'en' model.")
+    if "ner" not in nlp.pipe_names:
+        ner = nlp.add_pipe("ner", last=True)
+        log.info("Added 'ner' pipe to the model.")
+    else:
+        ner = nlp.get_pipe("ner")
 
+    # 3. Add the custom entity label to the NER pipe
+    for item in training_data:
+        for span in item.get("spans", []):
+            ner.add_label(span["label"])
+    log.info("Added custom labels to the NER pipe.")
 
-def generate_training_config():
-    """Generates a base spaCy config file for training."""
-    log.info("--- Step 2: Generating spaCy config file ---")
-    MODELS_DIR.mkdir(exist_ok=True)
+    # 4. Prepare training data in spaCy's Example format
+    examples = []
+    for item in training_data:
+        text = item['text']
+        annotations = {"entities": [(span['start'], span['end'], span['label']) for span in item.get('spans', [])]}
+        try:
+            example = Example.from_dict(nlp.make_doc(text), annotations)
+            examples.append(example)
+        except ValueError as e:
+            log.warning(f"Skipping example due to ValueError: {e}. Text: '{text}'")
+            continue
+    log.info("Converted training data to spaCy Example objects.")
 
-    command = f"python -m spacy init config {CONFIG_PATH} --lang en --pipeline ner --optimize efficiency --force"
-    log.info(f"Executing config generation command: {command}")
-    os.system(command)
+    # 5. Train the model
+    n_iter = 25  # Number of training iterations
+    other_pipes = [pipe for pipe in nlp.pipe_names if pipe != "ner"]
+    with nlp.disable_pipes(*other_pipes):  # only train NER
+        optimizer = nlp.begin_training()
+        for itn in range(n_iter):
+            random.shuffle(examples)
+            losses = {}
+            for example in examples:
+                nlp.update([example], drop=0.35, sgd=optimizer, losses=losses)
+            log.info(f"Iteration {itn+1}/{n_iter}, Losses: {losses}")
 
-    log.info(f"Base config file generated at {CONFIG_PATH}")
+    # 6. Save the trained model to the 'model-best' subdirectory
+    if MODEL_OUTPUT_PATH.exists():
+        shutil.rmtree(MODEL_OUTPUT_PATH)
+    best_model_path = MODEL_OUTPUT_PATH / "model-best"
+    best_model_path.mkdir(parents=True, exist_ok=True)
 
-
-def run_model_training():
-    """Runs the spaCy training process using the generated config and data."""
-    log.info("--- Step 3: Starting model training ---")
-    if not CONFIG_PATH.exists():
-        log.critical(f"Config file not found at {CONFIG_PATH}. Cannot start training.")
-        sys.exit(1)
-
-    command = (
-        f"python -m spacy train {CONFIG_PATH} "
-        f"--output {MODEL_OUTPUT_PATH} "
-        f"--paths.train {TRAINING_BINARY_PATH} "
-        f"--paths.dev {TRAINING_BINARY_PATH}"
-    )
-
-    log.info(f"Executing training command:\n{command}")
-    os.system(command)
-
-    log.info(f"--- Training complete. Best model saved to {MODEL_OUTPUT_PATH / 'model-best'} ---")
+    nlp.to_disk(best_model_path)
+    log.info(f"--- Training complete. Model saved to {best_model_path} ---")
 
 
 if __name__ == "__main__":
-    log.info("Starting custom NER model training pipeline.")
-    convert_data_for_training(TRAINING_DATA_PATH, TRAINING_BINARY_PATH)
-    generate_training_config()
-    run_model_training()
+    train_custom_ner_programmatically()
     log.info("NER model training pipeline finished.")
