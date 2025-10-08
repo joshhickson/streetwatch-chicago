@@ -229,6 +229,32 @@ def test_context_aware_geocoding(live_server):
     assert expected_log_line in stderr_content
 
 
+def test_event_extraction_from_text(live_server):
+    """
+    Tests that a descriptive event trigger is extracted from the text
+    and used in the title of the output data.
+    """
+    # 1. Prepare test data with a clear action verb linked to the location
+    url = f"{live_server}/process-sighting"
+    test_data = {
+        "post_text": "There was a raid by ICE near Chicago.",
+        "source_url": "http://example.com/sighting-with-event"
+    }
+
+    # 2. Send the request
+    response = requests.post(url, json=test_data, timeout=15)
+    assert response.status_code == 200
+    assert "1" in response.json()["message"]
+
+    # 3. Verify the CSV content has the descriptive title
+    assert os.path.exists(TEST_CSV_FILE)
+    with open(TEST_CSV_FILE, 'r', newline='', encoding='utf-8') as f:
+        rows = list(csv.DictReader(f))
+        assert len(rows) == 1
+        # The title should be "Raid near Chicago", not "Sighting near Chicago"
+        assert rows[0]['Title'] == 'Raid near Chicago'
+
+
 @pytest.mark.xfail(reason="Persistent srsly.msgpack error indicates a model serialization or environment issue.")
 def test_custom_ner_model_location_extraction(live_server):
     """

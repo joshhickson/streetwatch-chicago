@@ -172,6 +172,34 @@ def write_to_csv(data_row):
     except Exception as e:
         log.error(f"Error writing to CSV file {DATA_FILE}: {e}", exc_info=True)
 
+def extract_event_trigger(entity_span):
+    """
+    Extracts an event trigger (e.g., 'raid', 'checkpoint') linked to a
+    location entity by analyzing the dependency parse tree.
+    """
+    # The root of the entity span is the token that governs the phrase.
+    # We traverse up the dependency tree from this token.
+    token = entity_span.root
+
+    # Look for a governing verb or noun that describes the event.
+    # Traverse up to 4 levels up the dependency tree.
+    for _ in range(4):
+        token = token.head
+        # Exclude organization entities from being considered event triggers.
+        if token.ent_type_ == 'ORG':
+            continue
+        if token.pos_ in ('VERB', 'NOUN'):
+            # Return the lemmatized, title-cased form of the trigger.
+            # Lemmatization helps standardize (e.g., "raiding" -> "raid").
+            return token.lemma_.title()
+        # If we reach the root of the sentence, stop.
+        if token.head is token:
+            break
+
+    # If no specific trigger is found, return a default value.
+    return "Sighting"
+
+
 def process_sighting_text(post_text, source_url, post_timestamp_utc, agency='ICE', context=None, origin=None):
     """
     Processes the text of a sighting, geocodes it, and stores it.
@@ -206,15 +234,15 @@ def process_sighting_text(post_text, source_url, post_timestamp_utc, agency='ICE
         return 0
 
     doc = nlp(post_text)
-    locations = [ent.text for ent in doc.ents if ent.label_ in ["CHI_LOCATION", "GPE", "LOC"]]
-    log.info(f"Extracted {len(locations)} potential locations: {locations}")
+    locations = [ent for ent in doc.ents if ent.label_ in ["CHI_LOCATION", "GPE", "LOC"]]
+    log.info(f"Extracted {len(locations)} potential locations: {[ent.text for ent in locations]}")
 
     processed_count = 0
-    for loc in locations:
+    for loc_span in locations:
         # Use the new normalization for the geocoding query
-        geocoding_loc = normalize_text(loc)
+        geocoding_loc = normalize_text(loc_span.text)
         # Use title case for display purposes
-        display_loc = loc.title()
+        display_loc = loc_span.text.title()
 
         coords = geocode_location(geocoding_loc, context=context)
         if coords:
@@ -234,8 +262,11 @@ def process_sighting_text(post_text, source_url, post_timestamp_utc, agency='ICE
             # Serialize the bounding box dictionary to a JSON string for CSV storage
             bounding_box_json = json.dumps(coords.get('bounding_box')) if coords.get('bounding_box') else ''
 
+            # --- Event Extraction ---
+            event_trigger = extract_event_trigger(loc_span)
+
             data_row = {
-                'Title': f"Sighting near {display_loc}",
+                'Title': f"{event_trigger} near {display_loc}",
                 'Latitude': coords['lat'],
                 'Longitude': coords['lng'],
                 'Timestamp': timestamp_iso,
