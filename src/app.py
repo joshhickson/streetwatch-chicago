@@ -24,6 +24,7 @@ def handle_process_sighting():
 
     post_text = data.get('post_text')
     source_url = data.get('source_url', 'N/A')
+    context = data.get('context') # Extract context from payload
     log.info(f"Processing sighting from source: {source_url}")
 
     # Call the refactored processing function
@@ -31,15 +32,12 @@ def handle_process_sighting():
         # Get the current time as the timestamp
         post_timestamp_utc = datetime.now().timestamp()
 
-        # The context is not provided in this simple endpoint, so we pass None.
-        # The test data is specific enough ("... at Millennium Park, Chicago.")
-        # that it should be geocoded correctly without additional context.
         # For entries from this endpoint, we can mark the origin as 'api'.
         processed_count = process_sighting_text(
             post_text=post_text,
             source_url=source_url,
             post_timestamp_utc=post_timestamp_utc,
-            context=None,
+            context=context,
             origin='api_endpoint'
         )
         response_message = f"Successfully processed and stored {processed_count} new sightings."

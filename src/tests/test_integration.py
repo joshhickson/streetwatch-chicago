@@ -5,6 +5,8 @@ import os
 import time
 import csv
 import subprocess
+from src import gcp_fetch
+import importlib
 
 # --- Constants ---
 BASE_URL = "http://localhost:8080"
@@ -130,18 +132,12 @@ def test_process_sighting_endpoint(live_server):
         assert "southwest" in bounding_box
 
 
-def test_context_aware_geocoding(live_server, mocker):
+def test_context_aware_geocoding(live_server):
     """
     Tests that the endpoint correctly uses the 'context' field from the
-    payload to disambiguate a location. This test mocks the geocoding
-    function to inspect the arguments it was called with.
+    payload by inspecting the server logs.
     """
-    # 1. Mock the geocoding function
-    mock_geocode = mocker.patch('src.processing.geocode_location', return_value={
-        "lat": 41.918, "lng": -87.677, "bounding_box": None
-    })
-
-    # 2. Prepare test data with an ambiguous location and a context
+    # 1. Prepare test data
     url = f"{live_server}/process-sighting"
     test_data = {
         "post_text": "Sighting near Armitage.",
@@ -149,16 +145,19 @@ def test_context_aware_geocoding(live_server, mocker):
         "context": "Chicago, IL"
     }
 
-    # 3. Send the request
-    # First, need to modify the endpoint to accept the context
-    # For now, let's assume it does and write the test.
-    # I will modify the app code in a later step.
-    # This is a placeholder for the test logic.
-    # The test will fail until the app is updated.
+    # 2. Send the request
+    response = requests.post(url, json=test_data, timeout=15)
+    assert response.status_code == 200
+    assert "1" in response.json()["message"]
 
-    # This test is currently incomplete and will be finished in a later step
-    # after the application code is updated to handle the `context` field.
-    pass
+    # 3. Verify the server log contains the correct context message
+    assert os.path.exists(STDERR_LOG_FILE)
+    with open(STDERR_LOG_FILE, 'r') as f:
+        stderr_content = f.read()
+
+    # The processing script normalizes the location text to 'Armitage'
+    expected_log_line = "INTEGRATION_TESTING mode: Returning mock geocode for location='Armitage' with context='Chicago, IL'"
+    assert expected_log_line in stderr_content
 
 
 def test_deduplication_of_source_url(live_server):
@@ -217,3 +216,52 @@ def test_temporal_extraction_from_text(live_server):
         timestamp_str = relevant_row.get('Timestamp')
         assert timestamp_str is not None
         assert timestamp_str.startswith("2025-09-25T12:50:00")
+
+
+def test_gcp_fetch_script(mocker):
+    """
+    Tests the gcp_fetch.py script's logic by mocking the external APIs.
+    """
+    # 1. Mock the Google Custom Search API response
+    mock_gcp_response = {
+        "items": [
+            {
+                "title": "ICE sighting on Main St",
+                "snippet": "A witness saw ICE agents on Main Street today.",
+                "link": "http://example.com/sighting-gcp-1",
+                "displayLink": "example.com"
+            }
+        ]
+    }
+    mock_get = mocker.patch('requests.get')
+    mock_get.return_value.json.return_value = mock_gcp_response
+    mock_get.return_value.raise_for_status.return_value = None
+
+    # 2. Mock the POST call to our processing endpoint
+    mock_post = mocker.patch('requests.post')
+    mock_post.return_value.raise_for_status.return_value = None
+    mock_post.return_value.json.return_value = {"message": "Successfully processed 1 new sightings."}
+
+    # 3. Mock environment variables for the script
+    mocker.patch.dict(os.environ, {
+        "GOOGLE_API_KEY": "DUMMY_GCP_KEY",
+        "CUSTOM_SEARCH_ENGINE_ID": "DUMMY_CX"
+    })
+    # Reload the module to apply the mocked environment variables
+    importlib.reload(gcp_fetch)
+
+    # 4. Run the script's main function
+    gcp_fetch.fetch_and_process_data()
+
+    # 5. Assertions
+    mock_get.assert_called_once()
+    mock_post.assert_called_once()
+
+    # Inspect the payload of the call to our endpoint
+    call_args, call_kwargs = mock_post.call_args
+    payload = call_kwargs['json']
+
+    assert payload['source_url'] == "http://example.com/sighting-gcp-1"
+    assert "ICE sighting on Main St" in payload['post_text']
+    assert "A witness saw ICE agents on Main Street today." in payload['post_text']
+    assert payload['context'] == "example.com"

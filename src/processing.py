@@ -39,6 +39,12 @@ if not GOOGLE_API_KEY:
 # Default to the production file path if the variable is not set.
 DATA_FILE = os.getenv('CSV_OUTPUT_FILE', 'data/map_data.csv')
 
+def normalize_text(text: str) -> str:
+    """
+    Normalizes a string by converting it to title case and stripping whitespace.
+    """
+    return text.strip().title()
+
 def geocode_location(location_text, context=None):
     """
     Converts a location string to geographic coordinates using Google Geocoding API.
@@ -46,7 +52,7 @@ def geocode_location(location_text, context=None):
     In integration test mode, it returns a fixed dummy response.
     """
     if os.getenv('INTEGRATION_TESTING') == 'true':
-        log.info(f"INTEGRATION_TESTING mode: Returning mock geocode for '{location_text}'")
+        log.info(f"INTEGRATION_TESTING mode: Returning mock geocode for location='{location_text}' with context='{context}'")
         return {
             "lat": 40.6331249,
             "lng": -89.3985283,
@@ -183,8 +189,9 @@ def process_sighting_text(post_text, source_url, post_timestamp_utc, agency='ICE
 
     processed_count = 0
     for loc in locations:
-        # Normalize the location name to title case to prevent near-duplicates
-        normalized_loc = loc.title()
+        # Use the new normalization for the geocoding query, and title case for display
+        normalized_loc = normalize_text(loc)
+        display_loc = loc.title()
 
         coords = geocode_location(normalized_loc, context=context)
         if coords:
