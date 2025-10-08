@@ -1,4 +1,5 @@
 from flask import Flask, request, jsonify
+import os
 from datetime import datetime
 from src.processing import process_sighting_text
 from src.logger import log # Import our new centralized logger
@@ -28,11 +29,13 @@ def handle_process_sighting():
         # The context is not provided in this simple endpoint, so we pass None.
         # The test data is specific enough ("... at Millennium Park, Chicago.")
         # that it should be geocoded correctly without additional context.
+        # For entries from this endpoint, we can mark the origin as 'api'.
         processed_count = process_sighting_text(
             post_text=post_text,
             source_url=source_url,
             post_timestamp_utc=post_timestamp_utc,
-            context=None
+            context=None,
+            origin='api_endpoint'
         )
         response_message = f"Successfully processed and stored {processed_count} new sightings."
         log.info(f"Sending response: {response_message}")
@@ -44,6 +47,12 @@ def handle_process_sighting():
 
 if __name__ == '__main__':
     log.info("Starting Flask development server.")
-    # Note: When running locally, ensure PYTHONPATH is set to the project root
-    # and GOOGLE_GEOCODE_API_KEY is set as an environment variable.
-    app.run(debug=True, host='0.0.0.0', port=8080)
+    # Disable the reloader and debug mode if running in a test environment
+    # to prevent issues with environment variables and subprocess management.
+    is_test_env = os.getenv('FLASK_ENV') == 'test'
+    app.run(
+        debug=not is_test_env,
+        use_reloader=not is_test_env,
+        host='0.0.0.0',
+        port=8080
+    )

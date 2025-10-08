@@ -2,6 +2,7 @@ import spacy
 import requests
 import csv
 import os
+import json
 from datetime import datetime
 from dateparser import search as dateparser_search
 from src.logger import log # Import our new centralized logger
@@ -34,7 +35,9 @@ GOOGLE_API_KEY = os.getenv("GOOGLE_GEOCODE_API_KEY")
 if not GOOGLE_API_KEY:
     log.critical("CRITICAL: GOOGLE_GEOCODE_API_KEY environment variable not set.")
 
-DATA_FILE = 'data/map_data.csv'
+# Use an environment variable for the output file path to allow for test isolation.
+# Default to the production file path if the variable is not set.
+DATA_FILE = os.getenv('CSV_OUTPUT_FILE', 'data/map_data.csv')
 
 def geocode_location(location_text, context=None):
     """
@@ -58,9 +61,30 @@ def geocode_location(location_text, context=None):
         response.raise_for_status()
         results = response.json().get('results')
         if results:
-            location = results[0]['geometry']['location']
+            result = results[0]
+            geometry = result.get('geometry', {})
+            location = geometry.get('location', {})
+
+            lat = location.get('lat')
+            lng = location.get('lng')
+
+            if not lat or not lng:
+                log.warning(f"Geocoding result for '{full_address}' missing lat/lng.")
+                return None
+
+            # Prepare the core return data
+            geocoded_data = {"lat": lat, "lng": lng, "bounding_box": None}
             log.info(f"Geocoded '{full_address}' to {location}")
-            return {"lat": location['lat'], "lng": location['lng']}
+
+            # Check if the result is approximate and extract the bounding box if so
+            location_type = geometry.get('location_type')
+            if location_type == 'APPROXIMATE':
+                viewport = geometry.get('viewport')
+                if viewport:
+                    geocoded_data['bounding_box'] = viewport
+                    log.info(f"Extracted approximate bounding box for '{full_address}': {viewport}")
+
+            return geocoded_data
         else:
             log.warning(f"No geocoding results found for '{full_address}'")
             return None
@@ -97,9 +121,10 @@ def write_to_csv(data_row):
     try:
         os.makedirs(os.path.dirname(DATA_FILE), exist_ok=True)
         file_exists = os.path.isfile(DATA_FILE)
+        # Add 'Origin' and 'BoundingBox' to the fieldnames
+        fieldnames = ['Title', 'Latitude', 'Longitude', 'Timestamp', 'Description', 'SourceURL', 'VideoURL', 'Agency', 'Origin', 'BoundingBox']
         with open(DATA_FILE, 'a', newline='', encoding='utf-8') as csvfile:
-            fieldnames = ['Title', 'Latitude', 'Longitude', 'Timestamp', 'Description', 'SourceURL', 'VideoURL', 'Agency']
-            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames, extrasaction='ignore')
 
             if not file_exists:
                 writer.writeheader()
@@ -109,7 +134,7 @@ def write_to_csv(data_row):
     except Exception as e:
         log.error(f"Error writing to CSV file {DATA_FILE}: {e}", exc_info=True)
 
-def process_sighting_text(post_text, source_url, post_timestamp_utc, agency='ICE', context=None):
+def process_sighting_text(post_text, source_url, post_timestamp_utc, agency='ICE', context=None, origin=None):
     """
     Processes the text of a sighting, geocodes it, and stores it.
     Deduplicates based on the source URL to avoid processing the same post multiple times.
@@ -160,6 +185,9 @@ def process_sighting_text(post_text, source_url, post_timestamp_utc, agency='ICE
             # Format the final timestamp into the required ISO format.
             timestamp_iso = final_timestamp.isoformat() + 'Z'
 
+            # Serialize the bounding box dictionary to a JSON string for CSV storage
+            bounding_box_json = json.dumps(coords.get('bounding_box')) if coords.get('bounding_box') else ''
+
             data_row = {
                 'Title': f"Sighting near {normalized_loc}",
                 'Latitude': coords['lat'],
@@ -168,7 +196,9 @@ def process_sighting_text(post_text, source_url, post_timestamp_utc, agency='ICE
                 'Description': post_text,
                 'SourceURL': source_url,
                 'VideoURL': '',
-                'Agency': agency
+                'Agency': agency,
+                'Origin': origin,
+                'BoundingBox': bounding_box_json
             }
             write_to_csv(data_row)
             processed_count += 1
