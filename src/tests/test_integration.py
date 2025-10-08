@@ -126,36 +126,51 @@ def test_process_sighting_with_approximate_location(live_server):
         assert "northeast" in bounding_box
         assert "southwest" in bounding_box
 
-def test_deduplication_of_source_url(live_server):
+def test_content_based_deduplication(live_server):
     """
-    Tests that sending the same source URL twice results in only one
-    entry being created in the CSV file.
+    Tests the more precise deduplication logic which considers both the
+    source URL and the normalized content of the post.
     """
-    # 1. Prepare Test Data and URL
     url = f"{live_server}/process-sighting"
-    test_data = {
-        "post_text": "A unique event in Chicago.",
-        "source_url": "http://example.com/unique-sighting-1"
-    }
 
-    # 2. Send the first request
-    response1 = requests.post(url, json=test_data, timeout=15)
+    # --- Case 1: Initial Post (should be processed) ---
+    payload1 = {"post_text": "First sighting in Chicago.", "source_url": "http://example.com/event-1"}
+    response1 = requests.post(url, json=payload1, timeout=15)
     assert response1.status_code == 200
     assert "1" in response1.json()["message"]
 
-    # 3. Send the exact same request again
-    response2 = requests.post(url, json=test_data, timeout=15)
+    # --- Case 2: Exact Duplicate (should be skipped) ---
+    response2 = requests.post(url, json=payload1, timeout=15)
     assert response2.status_code == 200
     assert "0" in response2.json()["message"]
 
-    # 4. Verify CSV file content
+    # --- Case 3: Same URL, Different Text (should be processed) ---
+    # This is not a duplicate because the content has changed.
+    payload3 = {"post_text": "Second sighting in Chicago.", "source_url": "http://example.com/event-1"}
+    response3 = requests.post(url, json=payload3, timeout=15)
+    assert response3.status_code == 200
+    assert "1" in response3.json()["message"]
+
+    # --- Case 4: Different URL, Same Text (should be processed) ---
+    # This is not a duplicate because the source URL is different.
+    payload4 = {"post_text": "First sighting in Chicago.", "source_url": "http://example.com/event-2"}
+    response4 = requests.post(url, json=payload4, timeout=15)
+    assert response4.status_code == 200
+    assert "1" in response4.json()["message"]
+
+    # --- Case 5: Same URL, Same Text w/ Punctuation (should be skipped) ---
+    # This IS a duplicate because the text normalizes to the same content as payload 1.
+    payload5 = {"post_text": "First sighting in Chicago!!", "source_url": "http://example.com/event-1"}
+    response5 = requests.post(url, json=payload5, timeout=15)
+    assert response5.status_code == 200
+    assert "0" in response5.json()["message"]
+
+    # --- Final Verification ---
     assert os.path.exists(TEST_CSV_FILE)
     with open(TEST_CSV_FILE, 'r', newline='', encoding='utf-8') as f:
-        reader = csv.DictReader(f)
-        rows = list(reader)
-
-        assert len(rows) == 1
-        assert rows[0]['SourceURL'] == test_data['source_url']
+        rows = list(csv.DictReader(f))
+        # We expect 3 entries: from payloads 1, 3, and 4.
+        assert len(rows) == 3
 
 def test_temporal_extraction_from_text(live_server):
     """
@@ -210,5 +225,5 @@ def test_context_aware_geocoding(live_server):
     with open(STDERR_LOG_FILE, 'r') as f:
         stderr_content = f.read()
 
-    expected_log_line = "INTEGRATION_TESTING mode: Returning mock geocode for location='Armitage' with context='Chicago, IL'"
+    expected_log_line = "INTEGRATION_TESTING mode: Returning mock geocode for location='armitage' with context='Chicago, IL'"
     assert expected_log_line in stderr_content

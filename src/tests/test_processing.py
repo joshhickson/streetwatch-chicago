@@ -73,6 +73,24 @@ MOCK_GEOCODE_APPROXIMATE = {
 MOCK_GEOCODE_ZERO_RESULTS = {"results": [], "status": "ZERO_RESULTS"}
 
 
+# --- Tests for Helper Functions ---
+
+@pytest.mark.parametrize("input_text, expected_output", [
+    ("Hello, World!", "hello world"),
+    ("Chicago, IL", "chicago il"),
+    ("  leading and trailing spaces  ", "  leading and trailing spaces  "),
+    ("ALL CAPS", "all caps"),
+    ("no punctuation", "no punctuation"),
+    ("!@#$%^&*()", ""),
+    ("", ""),
+    (None, ""),
+    (123, "")
+])
+def test_normalize_text(input_text, expected_output):
+    """Tests the normalize_text helper function with various inputs."""
+    assert processing.normalize_text(input_text) == expected_output
+
+
 # --- Tests for geocode_location ---
 
 def test_geocode_location_success(mocker):

@@ -3,9 +3,23 @@ import requests
 import csv
 import os
 import json
+import string
 from datetime import datetime
 from dateparser import search as dateparser_search
 from src.logger import log # Import our new centralized logger
+
+# --- Helper Functions ---
+
+def normalize_text(text: str) -> str:
+    """
+    Converts text to lowercase and removes common punctuation.
+    """
+    if not isinstance(text, str):
+        return ""
+    text = text.lower()
+    # Create a translation table to remove punctuation
+    translator = str.maketrans('', '', string.punctuation)
+    return text.translate(translator)
 
 # --- Model and API Configuration ---
 
@@ -161,7 +175,8 @@ def write_to_csv(data_row):
 def process_sighting_text(post_text, source_url, post_timestamp_utc, agency='ICE', context=None, origin=None):
     """
     Processes the text of a sighting, geocodes it, and stores it.
-    Deduplicates based on the source URL to avoid processing the same post multiple times.
+    Deduplicates based on a combination of the source URL and the normalized
+    post text to avoid processing the same content multiple times.
     """
     log.info(f"Processing text from source: {source_url} with context: {context}")
 
@@ -169,20 +184,25 @@ def process_sighting_text(post_text, source_url, post_timestamp_utc, agency='ICE
         log.error("spaCy model not loaded, cannot process text.")
         return 0
 
-    # --- Deduplication based on Source URL ---
-    existing_source_urls = set()
+    # --- Deduplication based on Source URL and content ---
+    existing_entries = set()
     if os.path.isfile(DATA_FILE):
         try:
             with open(DATA_FILE, 'r', newline='', encoding='utf-8') as csvfile:
                 reader = csv.DictReader(csvfile)
                 for row in reader:
-                    if 'SourceURL' in row:
-                        existing_source_urls.add(row['SourceURL'])
+                    # Check if both columns exist to avoid KeyErrors
+                    if 'SourceURL' in row and 'Description' in row:
+                        # Normalize the description from the CSV for a fair comparison
+                        normalized_desc = normalize_text(row['Description'])
+                        existing_entries.add((row['SourceURL'], normalized_desc))
         except Exception as e:
             log.error(f"Could not read existing CSV data for deduplication: {e}", exc_info=True)
 
-    if source_url in existing_source_urls:
-        log.warning(f"Duplicate post: Source {source_url} has already been processed. Skipping.")
+    # Normalize the incoming post_text to check for duplicates
+    normalized_post_text = normalize_text(post_text)
+    if (source_url, normalized_post_text) in existing_entries:
+        log.warning(f"Duplicate post: Source {source_url} with the same content has already been processed. Skipping.")
         return 0
 
     doc = nlp(post_text)
@@ -191,10 +211,12 @@ def process_sighting_text(post_text, source_url, post_timestamp_utc, agency='ICE
 
     processed_count = 0
     for loc in locations:
-        # Normalize the location name to title case to prevent near-duplicates
-        normalized_loc = loc.title()
+        # Use the new normalization for the geocoding query
+        geocoding_loc = normalize_text(loc)
+        # Use title case for display purposes
+        display_loc = loc.title()
 
-        coords = geocode_location(normalized_loc, context=context)
+        coords = geocode_location(geocoding_loc, context=context)
         if coords:
             # --- Temporal Extraction ---
             # Convert the post's creation time from a UTC timestamp to a datetime object.
@@ -213,7 +235,7 @@ def process_sighting_text(post_text, source_url, post_timestamp_utc, agency='ICE
             bounding_box_json = json.dumps(coords.get('bounding_box')) if coords.get('bounding_box') else ''
 
             data_row = {
-                'Title': f"Sighting near {normalized_loc}",
+                'Title': f"Sighting near {display_loc}",
                 'Latitude': coords['lat'],
                 'Longitude': coords['lng'],
                 'Timestamp': timestamp_iso,
@@ -226,7 +248,7 @@ def process_sighting_text(post_text, source_url, post_timestamp_utc, agency='ICE
             }
             write_to_csv(data_row)
             processed_count += 1
-            log.info(f"Successfully processed first valid location '{normalized_loc}'. Halting search for this source.")
+            log.info(f"Successfully processed first valid location '{display_loc}'. Halting search for this source.")
             break # Exit after processing the first valid location
 
     return processed_count
