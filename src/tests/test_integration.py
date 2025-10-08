@@ -23,6 +23,7 @@ def live_server():
     endpoint to ensure the server is ready before running tests.
     """
     # 1. Setup: Clean up files from previous runs
+    # Ensure a clean slate for each test run to prevent state leakage
     if os.path.exists(TEST_CSV_FILE):
         os.remove(TEST_CSV_FILE)
     os.makedirs(os.path.dirname(STDERR_LOG_FILE), exist_ok=True)
