@@ -1,6 +1,7 @@
 import requests
 import os
 import json
+import re
 from src.logger import log
 
 # --- Configuration ---
@@ -10,6 +11,16 @@ PROCESSING_ENDPOINT_URL = "http://localhost:8080/process-sighting"
 
 # The query to search for. This can be refined over time.
 SEARCH_QUERY = "ICE OR CBP OR \"Border Patrol\" sighting in Chicago"
+
+
+def extract_subreddit_from_url(url: str) -> str | None:
+    """Extracts the subreddit name from a Reddit URL."""
+    if not url:
+        return None
+    match = re.search(r"reddit\.com/r/([^/]+)", url)
+    if match:
+        return match.group(1)
+    return None
 
 
 def fetch_and_process_data():
@@ -46,15 +57,16 @@ def fetch_and_process_data():
     # --- Process each search result ---
     for item in items:
         try:
+            source_url = item.get('link')
             # Prepare the payload for our processing service
             payload = {
                 "post_text": f"{item.get('title', '')}\n{item.get('snippet', '')}",
-                "source_url": item.get('link'),
-                # Use the displayLink as context to help with geocoding
-                "context": item.get('displayLink')
+                "source_url": source_url,
+                # Use the extracted subreddit as context to help with geocoding
+                "context": extract_subreddit_from_url(source_url)
             }
 
-            log.info(f"Sending item to processing endpoint: {payload['source_url']}")
+            log.info(f"Sending item to processing endpoint: {payload['source_url']} with context: {payload['context']}")
 
             # Send the data to our Flask app's endpoint
             proc_response = requests.post(PROCESSING_ENDPOINT_URL, json=payload, timeout=20)

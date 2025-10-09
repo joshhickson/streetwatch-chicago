@@ -39,6 +39,25 @@ if not GOOGLE_API_KEY:
 # Default to the production file path if the variable is not set.
 DATA_FILE = os.getenv('CSV_OUTPUT_FILE', 'data/map_data.csv')
 
+# --- Geographic Context Mapping ---
+# Maps subreddit names to high-quality geographic hints for the geocoder
+SUBREDDIT_CONTEXT_MAP = {
+    "chicago": "Chicago, IL, USA",
+    "EyesOnIce": "USA", # General USA context for a non-specific subreddit
+    # Future subreddits can be added here
+    "nyc": "New York, NY, USA",
+    "bayarea": "Bay Area, CA, USA"
+}
+
+def get_geocoding_hint(context: str) -> str:
+    """
+    Returns a high-quality geographic hint based on the subreddit context.
+    """
+    if not context:
+        return ""
+    # Return the mapped hint, or the context itself if not in the map
+    return SUBREDDIT_CONTEXT_MAP.get(context.lower(), context)
+
 def normalize_text(text: str) -> str:
     """
     Normalizes a string by converting it to title case and stripping whitespace.
@@ -48,8 +67,7 @@ def normalize_text(text: str) -> str:
 def geocode_location(location_text, context=None):
     """
     Converts a location string to geographic coordinates using Google Geocoding API.
-    Appends context (e.g., 'Chicago, IL') to the query if provided.
-    In integration test mode, it returns a fixed dummy response.
+    Appends a high-quality geographic hint derived from the context.
     """
     if os.getenv('INTEGRATION_TESTING') == 'true':
         log.info(f"INTEGRATION_TESTING mode: Returning mock geocode for location='{location_text}' with context='{context}'")
@@ -62,8 +80,11 @@ def geocode_location(location_text, context=None):
             },
         }
 
-    # Construct the full address string with context if available
-    full_address = f"{location_text}, {context}" if context and context.strip() else location_text
+    # Get a high-quality hint from the context (e.g., 'chicago' -> 'Chicago, IL, USA')
+    geo_hint = get_geocoding_hint(context)
+
+    # Construct the full address string with the geographic hint
+    full_address = f"{location_text}, {geo_hint}" if geo_hint else location_text
     log.info(f"Geocoding location: '{full_address}'")
 
     if not GOOGLE_API_KEY:

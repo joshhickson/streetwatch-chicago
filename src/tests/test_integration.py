@@ -229,8 +229,9 @@ def test_gcp_fetch_script(mocker):
             {
                 "title": "ICE sighting on Main St",
                 "snippet": "A witness saw ICE agents on Main Street today.",
-                "link": "http://example.com/sighting-gcp-1",
-                "displayLink": "example.com"
+                # Use a realistic Reddit URL to test the new extraction logic
+                "link": "https://www.reddit.com/r/chicago/comments/q12345/sighting-gcp-1/",
+                "displayLink": "www.reddit.com"
             }
         ]
     }
@@ -262,7 +263,8 @@ def test_gcp_fetch_script(mocker):
     call_args, call_kwargs = mock_post.call_args
     payload = call_kwargs['json']
 
-    assert payload['source_url'] == "http://example.com/sighting-gcp-1"
+    assert payload['source_url'] == "https://www.reddit.com/r/chicago/comments/q12345/sighting-gcp-1/"
     assert "ICE sighting on Main St" in payload['post_text']
     assert "A witness saw ICE agents on Main Street today." in payload['post_text']
-    assert payload['context'] == "example.com"
+    # Verify that the subreddit 'chicago' is correctly extracted and passed as context
+    assert payload['context'] == "chicago"
