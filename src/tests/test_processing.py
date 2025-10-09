@@ -91,9 +91,8 @@ def test_geocode_location_no_results(mocker):
 
 @pytest.mark.parametrize("text, expected_date_parts", [
     ("Sighting happened on 9/25/25 12:50pm", (2025, 9, 25, 12, 50)),
-    # Mark as xfail due to known limitation with STRICT_PARSING
-    pytest.param("Event occurred yesterday at 10am", (2025, 10, 6, 10, 0), marks=pytest.mark.xfail(reason="STRICT_PARSING is too aggressive for this phrase.")),
-    pytest.param("This occurred last Friday", (2025, 10, 3, 0, 0), marks=pytest.mark.xfail(reason="STRICT_PARSING is too aggressive for this phrase.")),
+    ("Event occurred yesterday at 10am", (2025, 10, 6, 10, 0)),
+    ("This occurred last Friday", (2025, 10, 3, 0, 0)),
     ("A plain string with no date.", None),
 ])
 def test_extract_event_timestamp(text, expected_date_parts):

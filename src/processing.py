@@ -4,7 +4,7 @@ import csv
 import os
 import json
 from datetime import datetime
-from dateparser import search as dateparser_search
+from dateparser import search as dateparser_search, parse as dateparser_parse
 from src.logger import log # Import our new centralized logger
 
 # --- Model and API Configuration ---
@@ -133,30 +133,42 @@ def geocode_location(location_text, context=None):
 
 def extract_event_timestamp(text, base_time):
     """
-    Extracts a timestamp from text using dateparser.
+    Extracts a timestamp from text using a robust two-step dateparser approach.
     Returns a datetime object if a date is found, otherwise None.
     """
     log.info(f"Searching for temporal expressions in text, relative to {base_time.isoformat()}")
-    # Use search_dates to find all potential date strings in the text.
-    # PREFER_DATES_FROM: 'past' ensures that "Friday" is interpreted as last Friday, not next Friday.
-    # RELATIVE_BASE: Provides the anchor for relative times like "yesterday" or "2 hours ago".
+
+    # Step 1: Broad search for any potential date string candidates.
+    # We keep STRICT_PARSING disabled here to find candidates like "yesterday".
     found_dates = dateparser_search.search_dates(
         text,
-        settings={
-            'PREFER_DATES_FROM': 'past',
-            'RELATIVE_BASE': base_time,
-            'STRICT_PARSING': True
-        }
+        settings={'PREFER_DATES_FROM': 'past', 'RELATIVE_BASE': base_time}
     )
 
-    if found_dates:
-        # search_dates returns a list of tuples: (string, datetime_object)
-        first_match_str, first_match_dt = found_dates[0]
-        log.info(f"Found potential event time: '{first_match_str}' -> {first_match_dt.isoformat()}")
-        return first_match_dt
-    else:
-        log.info("No explicit event time found in text.")
+    if not found_dates:
+        log.info("No potential date strings found in text.")
         return None
+
+    # Step 2: Filter and parse the best candidate.
+    for date_str, _ in found_dates:
+        # Filter out very short, likely nonsensical matches (e.g., "no", "at", "on").
+        if len(date_str.strip()) <= 3:
+            log.info(f"Skipping short, ambiguous date candidate: '{date_str}'")
+            continue
+
+        # Re-parse the most likely candidate string with the parse function, which is
+        # better at handling combined date and time components accurately.
+        log.info(f"Found promising candidate: '{date_str}'. Re-parsing for accuracy...")
+        final_dt = dateparser_parse(
+            date_str,
+            settings={'PREFER_DATES_FROM': 'past', 'RELATIVE_BASE': base_time}
+        )
+        if final_dt:
+            log.info(f"Successfully parsed event time: '{date_str}' -> {final_dt.isoformat()}")
+            return final_dt
+
+    log.info("No valid, unambiguous event time found after filtering.")
+    return None
 
 def write_to_csv(data_row):
     """Appends a new data row to the master CSV file."""
