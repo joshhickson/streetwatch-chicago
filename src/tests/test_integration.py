@@ -40,7 +40,6 @@ def live_server():
         # Set the integration testing flag to use mock responses in the app
         test_env['INTEGRATION_TESTING'] = 'true'
 
-
         server_process = subprocess.Popen(
             ['python3', '-m', 'src.app'],
             env=test_env,
@@ -268,3 +267,31 @@ def test_gcp_fetch_script(mocker):
     assert "A witness saw ICE agents on Main Street today." in payload['post_text']
     # Verify that the subreddit 'chicago' is correctly extracted and passed as context
     assert payload['context'] == "chicago"
+
+
+@pytest.mark.skip(reason="Custom NER model loading is unstable and has been disabled pending further investigation.")
+def test_custom_ner_model_location_extraction(live_server):
+    """
+    Tests that the custom NER model is being used and correctly extracts a
+    Chicago-specific location that the generic model would likely miss.
+    """
+    # 1. Prepare test data with a location from our training set
+    url = f"{live_server}/process-sighting"
+    test_data = {
+        "post_text": "Federal agents entering a house near Thomas Street and Harding Avenue.",
+        "source_url": "http://example.com/custom-ner-sighting"
+    }
+
+    # 2. Send the request
+    response = requests.post(url, json=test_data, timeout=15)
+    assert response.status_code == 200
+    assert "1" in response.json()["message"]
+
+    # 3. Verify the CSV content shows the custom location was extracted
+    assert os.path.exists(TEST_CSV_FILE)
+    with open(TEST_CSV_FILE, 'r', newline='', encoding='utf-8') as f:
+        reader = csv.DictReader(f)
+        rows = list(reader)
+        assert len(rows) == 1
+        # The processing script normalizes the location text to title case
+        assert rows[0]['Title'] == 'Sighting near Thomas Street And Harding Avenue'

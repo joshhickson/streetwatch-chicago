@@ -5,85 +5,54 @@ import os
 import json
 from datetime import datetime
 from dateparser import search as dateparser_search, parse as dateparser_parse
-from src.logger import log # Import our new centralized logger
+from src.logger import log
 
 # --- Model and API Configuration ---
-
-# Define model paths
-CUSTOM_MODEL_PATH = 'models/custom_ner_model/model-best'
-
-# Load the spaCy model, preferring the custom model if it exists.
-nlp = None
-if os.path.exists(CUSTOM_MODEL_PATH):
-    try:
-        nlp = spacy.load(CUSTOM_MODEL_PATH)
-        log.info(f"Custom spaCy model loaded successfully from {CUSTOM_MODEL_PATH}.")
-    except Exception as e:
-        log.error(f"Error loading custom spaCy model from {CUSTOM_MODEL_PATH}: {e}", exc_info=True)
-
-if nlp is None:
-    log.warning("Custom model not found or failed to load. Falling back to default 'en_core_web_sm' model.")
-    try:
-        nlp = spacy.load("en_core_web_sm")
-        log.info("Default spaCy model 'en_core_web_sm' loaded successfully.")
-    except Exception as e:
-        log.critical(f"Failed to load even the default spaCy model. NLP processing will be disabled. Error: {e}", exc_info=True)
-        # nlp remains None
-
-# Constants
 GOOGLE_API_KEY = os.getenv("GOOGLE_GEOCODE_API_KEY")
-if not GOOGLE_API_KEY:
-    log.critical("CRITICAL: GOOGLE_GEOCODE_API_KEY environment variable not set.")
-
-# Use an environment variable for the output file path to allow for test isolation.
-# Default to the production file path if the variable is not set.
 DATA_FILE = os.getenv('CSV_OUTPUT_FILE', 'data/map_data.csv')
 
+# --- Global variable for the model, initialized to None ---
+nlp = None
+
 # --- Geographic Context Mapping ---
-# Maps subreddit names to high-quality geographic hints for the geocoder
 SUBREDDIT_CONTEXT_MAP = {
     "chicago": "Chicago, IL, USA",
-    "EyesOnIce": "USA", # General USA context for a non-specific subreddit
-    # Future subreddits can be added here
+    "EyesOnIce": "USA",
     "nyc": "New York, NY, USA",
     "bayarea": "Bay Area, CA, USA"
 }
 
+def get_nlp_model():
+    """
+    Lazy-loads the spaCy model. It's only loaded the first time this function is called.
+    """
+    global nlp
+    if nlp is None:
+        log.info("NLP model not loaded yet. Attempting to load 'en_core_web_sm'...")
+        try:
+            nlp = spacy.load("en_core_web_sm")
+            log.info("Default spaCy model 'en_core_web_sm' loaded successfully.")
+        except Exception as e:
+            log.critical(f"Failed to load 'en_core_web_sm' model. NLP processing will be disabled. Error: {e}", exc_info=True)
+            nlp = None
+    return nlp
+
 def get_geocoding_hint(context: str) -> str:
-    """
-    Returns a high-quality geographic hint based on the subreddit context.
-    """
-    if not context:
-        return ""
-    # Return the mapped hint, or the context itself if not in the map
+    """Returns a high-quality geographic hint based on the subreddit context."""
+    if not context: return ""
     return SUBREDDIT_CONTEXT_MAP.get(context.lower(), context)
 
 def normalize_text(text: str) -> str:
-    """
-    Normalizes a string by converting it to title case and stripping whitespace.
-    """
+    """Normalizes a string by converting it to title case and stripping whitespace."""
     return text.strip().title()
 
 def geocode_location(location_text, context=None):
-    """
-    Converts a location string to geographic coordinates using Google Geocoding API.
-    Appends a high-quality geographic hint derived from the context.
-    """
+    """Converts a location string to geographic coordinates using Google Geocoding API."""
     if os.getenv('INTEGRATION_TESTING') == 'true':
         log.info(f"INTEGRATION_TESTING mode: Returning mock geocode for location='{location_text}' with context='{context}'")
-        return {
-            "lat": 40.6331249,
-            "lng": -89.3985283,
-            "bounding_box": {
-                "northeast": {"lat": 42.508338, "lng": -87.524529},
-                "southwest": {"lat": 36.970298, "lng": -91.513079},
-            },
-        }
+        return {"lat": 40.6331249, "lng": -89.3985283, "bounding_box": {"northeast": {"lat": 42.508338, "lng": -87.524529}, "southwest": {"lat": 36.970298, "lng": -91.513079}}}
 
-    # Get a high-quality hint from the context (e.g., 'chicago' -> 'Chicago, IL, USA')
     geo_hint = get_geocoding_hint(context)
-
-    # Construct the full address string with the geographic hint
     full_address = f"{location_text}, {geo_hint}" if geo_hint else location_text
     log.info(f"Geocoding location: '{full_address}'")
 
@@ -91,10 +60,7 @@ def geocode_location(location_text, context=None):
         log.error("Google API key not configured. Cannot geocode.")
         return None
 
-    params = {
-        'address': full_address,
-        'key': GOOGLE_API_KEY,
-    }
+    params = {'address': full_address, 'key': GOOGLE_API_KEY}
     try:
         response = requests.get('https://maps.googleapis.com/maps/api/geocode/json', params=params)
         response.raise_for_status()
@@ -103,26 +69,16 @@ def geocode_location(location_text, context=None):
             result = results[0]
             geometry = result.get('geometry', {})
             location = geometry.get('location', {})
-
-            lat = location.get('lat')
-            lng = location.get('lng')
+            lat, lng = location.get('lat'), location.get('lng')
 
             if not lat or not lng:
                 log.warning(f"Geocoding result for '{full_address}' missing lat/lng.")
                 return None
 
-            # Prepare the core return data
             geocoded_data = {"lat": lat, "lng": lng, "bounding_box": None}
-            log.info(f"Geocoded '{full_address}' to {location}")
-
-            # Check if the result is approximate and extract the bounding box if so
-            location_type = geometry.get('location_type')
-            if location_type == 'APPROXIMATE':
-                viewport = geometry.get('viewport')
-                if viewport:
+            if geometry.get('location_type') == 'APPROXIMATE':
+                if viewport := geometry.get('viewport'):
                     geocoded_data['bounding_box'] = viewport
-                    log.info(f"Extracted approximate bounding box for '{full_address}': {viewport}")
-
             return geocoded_data
         else:
             log.warning(f"No geocoding results found for '{full_address}'")
@@ -132,75 +88,38 @@ def geocode_location(location_text, context=None):
         return None
 
 def extract_event_timestamp(text, base_time):
-    """
-    Extracts a timestamp from text using a robust two-step dateparser approach.
-    Returns a datetime object if a date is found, otherwise None.
-    """
-    log.info(f"Searching for temporal expressions in text, relative to {base_time.isoformat()}")
-
-    # Step 1: Broad search for any potential date string candidates.
-    # We keep STRICT_PARSING disabled here to find candidates like "yesterday".
-    found_dates = dateparser_search.search_dates(
-        text,
-        settings={'PREFER_DATES_FROM': 'past', 'RELATIVE_BASE': base_time}
-    )
-
+    """Extracts a timestamp from text using a robust two-step dateparser approach."""
+    found_dates = dateparser_search.search_dates(text, settings={'PREFER_DATES_FROM': 'past', 'RELATIVE_BASE': base_time})
     if not found_dates:
-        log.info("No potential date strings found in text.")
         return None
-
-    # Step 2: Filter and parse the best candidate.
     for date_str, _ in found_dates:
-        # Filter out very short, likely nonsensical matches (e.g., "no", "at", "on").
-        if len(date_str.strip()) <= 3:
-            log.info(f"Skipping short, ambiguous date candidate: '{date_str}'")
-            continue
-
-        # Re-parse the most likely candidate string with the parse function, which is
-        # better at handling combined date and time components accurately.
-        log.info(f"Found promising candidate: '{date_str}'. Re-parsing for accuracy...")
-        final_dt = dateparser_parse(
-            date_str,
-            settings={'PREFER_DATES_FROM': 'past', 'RELATIVE_BASE': base_time}
-        )
+        if len(date_str.strip()) <= 3: continue
+        final_dt = dateparser_parse(date_str, settings={'PREFER_DATES_FROM': 'past', 'RELATIVE_BASE': base_time})
         if final_dt:
-            log.info(f"Successfully parsed event time: '{date_str}' -> {final_dt.isoformat()}")
             return final_dt
-
-    log.info("No valid, unambiguous event time found after filtering.")
     return None
 
 def write_to_csv(data_row):
     """Appends a new data row to the master CSV file."""
-    log.info(f"Writing to CSV: {data_row}")
-    try:
-        os.makedirs(os.path.dirname(DATA_FILE), exist_ok=True)
-        file_exists = os.path.isfile(DATA_FILE)
-        # Add 'Origin' and 'BoundingBox' to the fieldnames
-        fieldnames = ['Title', 'Latitude', 'Longitude', 'Timestamp', 'Description', 'SourceURL', 'VideoURL', 'Agency', 'Origin', 'BoundingBox']
-        with open(DATA_FILE, 'a', newline='', encoding='utf-8') as csvfile:
-            writer = csv.DictWriter(csvfile, fieldnames=fieldnames, extrasaction='ignore')
-
-            if not file_exists:
-                writer.writeheader()
-                log.info(f"Created new CSV file with headers: {DATA_FILE}")
-            writer.writerow(data_row)
-        log.info("Successfully wrote to CSV.")
-    except Exception as e:
-        log.error(f"Error writing to CSV file {DATA_FILE}: {e}", exc_info=True)
+    os.makedirs(os.path.dirname(DATA_FILE), exist_ok=True)
+    file_exists = os.path.isfile(DATA_FILE)
+    fieldnames = ['Title', 'Latitude', 'Longitude', 'Timestamp', 'Description', 'SourceURL', 'VideoURL', 'Agency', 'Origin', 'BoundingBox']
+    with open(DATA_FILE, 'a', newline='', encoding='utf-8') as csvfile:
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames, extrasaction='ignore')
+        if not file_exists:
+            writer.writeheader()
+        writer.writerow(data_row)
 
 def process_sighting_text(post_text, source_url, post_timestamp_utc, agency='ICE', context=None, origin=None):
-    """
-    Processes the text of a sighting, geocodes it, and stores it.
-    Deduplicates based on the source URL to avoid processing the same post multiple times.
-    """
+    """Processes the text of a sighting, geocodes it, and stores it."""
     log.info(f"Processing text from source: {source_url} with context: {context}")
 
-    if not nlp:
-        log.error("spaCy model not loaded, cannot process text.")
+    # Call the lazy-loader to ensure the model is ready.
+    nlp_model = get_nlp_model()
+    if not nlp_model:
+        log.error("NLP model is not available. Cannot process text.")
         return 0
 
-    # --- Deduplication based on Source URL ---
     existing_source_urls = set()
     if os.path.isfile(DATA_FILE):
         try:
@@ -216,49 +135,28 @@ def process_sighting_text(post_text, source_url, post_timestamp_utc, agency='ICE
         log.warning(f"Duplicate post: Source {source_url} has already been processed. Skipping.")
         return 0
 
-    doc = nlp(post_text)
-    locations = [ent.text for ent in doc.ents if ent.label_ in ["CHI_LOCATION", "GPE", "LOC"]]
+    doc = nlp_model(post_text)
+    # The custom CHI_LOCATION label is removed as we are now only using the generic model.
+    locations = [ent.text for ent in doc.ents if ent.label_ in ["GPE", "LOC"]]
     log.info(f"Extracted {len(locations)} potential locations: {locations}")
 
     processed_count = 0
     for loc in locations:
-        # Use the new normalization for the geocoding query, and title case for display
         normalized_loc = normalize_text(loc)
-        display_loc = loc.title()
-
         coords = geocode_location(normalized_loc, context=context)
         if coords:
-            # --- Temporal Extraction ---
-            # Convert the post's creation time from a UTC timestamp to a datetime object.
             post_creation_time = datetime.fromtimestamp(post_timestamp_utc)
-
-            # Try to extract a more specific event time from the text.
             event_time = extract_event_timestamp(post_text, post_creation_time)
-
-            # If no specific time is found in the text, fall back to the post's creation time.
             final_timestamp = event_time if event_time else post_creation_time
-
-            # Format the final timestamp into the required ISO format.
             timestamp_iso = final_timestamp.isoformat() + 'Z'
-
-            # Serialize the bounding box dictionary to a JSON string for CSV storage
             bounding_box_json = json.dumps(coords.get('bounding_box')) if coords.get('bounding_box') else ''
-
             data_row = {
-                'Title': f"Sighting near {normalized_loc}",
-                'Latitude': coords['lat'],
-                'Longitude': coords['lng'],
-                'Timestamp': timestamp_iso,
-                'Description': post_text,
-                'SourceURL': source_url,
-                'VideoURL': '',
-                'Agency': agency,
-                'Origin': origin,
-                'BoundingBox': bounding_box_json
+                'Title': f"Sighting near {normalized_loc}", 'Latitude': coords['lat'], 'Longitude': coords['lng'],
+                'Timestamp': timestamp_iso, 'Description': post_text, 'SourceURL': source_url,
+                'VideoURL': '', 'Agency': agency, 'Origin': origin, 'BoundingBox': bounding_box_json
             }
             write_to_csv(data_row)
             processed_count += 1
             log.info(f"Successfully processed first valid location '{normalized_loc}'. Halting search for this source.")
-            break # Exit after processing the first valid location
-
+            break
     return processed_count
