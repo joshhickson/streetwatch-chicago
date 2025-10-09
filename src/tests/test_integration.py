@@ -220,7 +220,8 @@ def test_temporal_extraction_from_text(live_server):
 
 def test_gcp_fetch_script(mocker):
     """
-    Tests the gcp_fetch.py script's logic by mocking the external APIs.
+    Tests the gcp_fetch.py script's logic by mocking the external APIs,
+    including the new Reddit JSON API call.
     """
     # 1. Mock the Google Custom Search API response
     mock_gcp_response = {
@@ -228,44 +229,83 @@ def test_gcp_fetch_script(mocker):
             {
                 "title": "ICE sighting on Main St",
                 "snippet": "A witness saw ICE agents on Main Street today.",
-                # Use a realistic Reddit URL to test the new extraction logic
                 "link": "https://www.reddit.com/r/chicago/comments/q12345/sighting-gcp-1/",
                 "displayLink": "www.reddit.com"
             }
         ]
     }
-    mock_get = mocker.patch('requests.get')
-    mock_get.return_value.json.return_value = mock_gcp_response
-    mock_get.return_value.raise_for_status.return_value = None
+    # 2. Mock the Reddit JSON API response
+    mock_reddit_response = [
+        {"data": {"children": [{"data": {"title": "ICE sighting on Main St", "selftext": "Original post body."}}]}},
+        {"data": {"children": [
+            {"kind": "t1", "data": {"body": "Here is the first comment.", "replies": ""}},
+            {"kind": "t1", "data": {"body": "Here is the second comment.", "replies": ""}},
+        ]}}
+    ]
 
-    # 2. Mock the POST call to our processing endpoint
+    # 3. Configure the mock for requests.get to return different values on each call
+    mock_get = mocker.patch('requests.get')
+
+    # Create mock response objects for each API call
+    mock_gcp_api_response = mocker.MagicMock()
+    mock_gcp_api_response.json.return_value = mock_gcp_response
+    mock_gcp_api_response.raise_for_status.return_value = None
+
+    mock_reddit_api_response = mocker.MagicMock()
+    mock_reddit_api_response.json.return_value = mock_reddit_response
+    mock_reddit_api_response.raise_for_status.return_value = None
+
+    # The first call to get() gets the Google result, the second gets the Reddit result
+    mock_get.side_effect = [mock_gcp_api_response, mock_reddit_api_response]
+
+    # 4. Mock the POST call to our processing endpoint
     mock_post = mocker.patch('requests.post')
     mock_post.return_value.raise_for_status.return_value = None
     mock_post.return_value.json.return_value = {"message": "Successfully processed 1 new sightings."}
 
-    # 3. Mock environment variables for the script
+    # 5. Mock environment variables for the script
     mocker.patch.dict(os.environ, {
         "GOOGLE_API_KEY": "DUMMY_GCP_KEY",
         "CUSTOM_SEARCH_ENGINE_ID": "DUMMY_CX"
     })
-    # Reload the module to apply the mocked environment variables
     importlib.reload(gcp_fetch)
 
-    # 4. Run the script's main function
+    # 6. Run the script's main function
     gcp_fetch.fetch_and_process_data()
 
-    # 5. Assertions
-    mock_get.assert_called_once()
+    # 7. Assertions
+    # Verify that requests.get was called twice
+    assert mock_get.call_count == 2
+
+    # Verify the first call was to the Google API
+    google_call = mock_get.call_args_list[0]
+    assert "https://www.googleapis.com/customsearch/v1" in google_call.args[0]
+
+    # Verify the second call was to the Reddit JSON API
+    reddit_call = mock_get.call_args_list[1]
+    expected_reddit_url = "https://www.reddit.com/r/chicago/comments/q12345/sighting-gcp-1.json"
+    assert expected_reddit_url in reddit_call.args[0]
+
+    # Verify our endpoint was called once
     mock_post.assert_called_once()
 
-    # Inspect the payload of the call to our endpoint
+    # Inspect the payload sent to our endpoint
     call_args, call_kwargs = mock_post.call_args
     payload = call_kwargs['json']
 
     assert payload['source_url'] == "https://www.reddit.com/r/chicago/comments/q12345/sighting-gcp-1/"
-    assert "ICE sighting on Main St" in payload['post_text']
-    assert "A witness saw ICE agents on Main Street today." in payload['post_text']
-    # Verify that the subreddit 'chicago' is correctly extracted and passed as context
+
+    # Check that the payload contains the full text from Reddit, not the snippet
+    expected_full_text = (
+        "ICE sighting on Main St\n\n"
+        "Original post body.\n\n"
+        "Here is the first comment.\n"
+        "Here is the second comment."
+    )
+    assert payload['post_text'] == expected_full_text
+    assert "A witness saw ICE agents" not in payload['post_text'] # Snippet should not be present
+
+    # Verify context is still extracted correctly
     assert payload['context'] == "chicago"
 
 
