@@ -4,12 +4,14 @@ import csv
 import os
 import json
 from datetime import datetime
+from pathlib import Path
 from dateparser import search as dateparser_search, parse as dateparser_parse
 from src.logger import log
 
 # --- Model and API Configuration ---
 GOOGLE_API_KEY = os.getenv("GOOGLE_GEOCODE_API_KEY")
 DATA_FILE = os.getenv('CSV_OUTPUT_FILE', 'data/map_data.csv')
+CUSTOM_MODEL_PATH = Path(__file__).resolve().parent.parent / "models" / "custom_ner_model"
 
 # --- Global variable for the model, initialized to None ---
 nlp = None
@@ -24,17 +26,33 @@ SUBREDDIT_CONTEXT_MAP = {
 
 def get_nlp_model():
     """
-    Lazy-loads the spaCy model. It's only loaded the first time this function is called.
+    Lazy-loads the spaCy model. It prioritizes the custom model, falling back to the generic one.
     """
     global nlp
-    if nlp is None:
-        log.info("NLP model not loaded yet. Attempting to load 'en_core_web_sm'...")
+    if nlp is not None:
+        return nlp
+
+    log.info("NLP model not loaded yet. Attempting to load models...")
+    # Attempt to load the custom model first
+    if CUSTOM_MODEL_PATH.exists():
         try:
-            nlp = spacy.load("en_core_web_sm")
-            log.info("Default spaCy model 'en_core_web_sm' loaded successfully.")
+            log.info(f"Attempting to load custom NER model from: {CUSTOM_MODEL_PATH}")
+            nlp = spacy.load(CUSTOM_MODEL_PATH)
+            log.info("Custom NER model loaded successfully.")
+            return nlp
         except Exception as e:
-            log.critical(f"Failed to load 'en_core_web_sm' model. NLP processing will be disabled. Error: {e}", exc_info=True)
-            nlp = None
+            log.warning(f"Failed to load custom NER model. Error: {e}", exc_info=True)
+            # Fall through to loading the default model
+
+    # If custom model fails or doesn't exist, load the default model
+    log.info("Custom model not found or failed to load. Attempting to load 'en_core_web_sm'...")
+    try:
+        nlp = spacy.load("en_core_web_sm")
+        log.info("Default spaCy model 'en_core_web_sm' loaded successfully.")
+    except Exception as e:
+        log.critical(f"Failed to load 'en_core_web_sm' model. NLP processing will be disabled. Error: {e}", exc_info=True)
+        nlp = None
+
     return nlp
 
 def get_geocoding_hint(context: str) -> str:
@@ -136,8 +154,14 @@ def process_sighting_text(post_text, source_url, post_timestamp_utc, agency='ICE
         return 0
 
     doc = nlp_model(post_text)
-    # The custom CHI_LOCATION label is removed as we are now only using the generic model.
-    locations = [ent.text for ent in doc.ents if ent.label_ in ["GPE", "LOC"]]
+
+    # Dynamically set the location labels to look for
+    accepted_labels = ["GPE", "LOC"]
+    if 'ner' in nlp_model.pipe_names and 'CHI_LOCATION' in nlp_model.get_pipe('ner').labels:
+        accepted_labels.append('CHI_LOCATION')
+        log.info("Custom 'CHI_LOCATION' label found in model. Will use for extraction.")
+
+    locations = [ent.text for ent in doc.ents if ent.label_ in accepted_labels]
     log.info(f"Extracted {len(locations)} potential locations: {locations}")
 
     processed_count = 0

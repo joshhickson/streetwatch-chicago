@@ -5,6 +5,11 @@ import os
 import time
 import csv
 import subprocess
+
+# Make sure the app's source is in the path
+import sys
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
+
 from src import gcp_fetch
 import importlib
 
