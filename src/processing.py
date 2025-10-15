@@ -55,7 +55,7 @@ def get_nlp_model():
 
     return nlp
 
-def get_geocoding_hint(context: str) -> str:
+def get_geocoding_hint(context: str | None) -> str:
     """Returns a high-quality geographic hint based on the subreddit context."""
     if not context: return ""
     return SUBREDDIT_CONTEXT_MAP.get(context.lower(), context)
@@ -157,9 +157,11 @@ def process_sighting_text(post_text, source_url, post_timestamp_utc, agency='ICE
 
     # Dynamically set the location labels to look for
     accepted_labels = ["GPE", "LOC"]
-    if 'ner' in nlp_model.pipe_names and 'CHI_LOCATION' in nlp_model.get_pipe('ner').labels:
-        accepted_labels.append('CHI_LOCATION')
-        log.info("Custom 'CHI_LOCATION' label found in model. Will use for extraction.")
+    if 'ner' in nlp_model.pipe_names:
+        ner_pipe = nlp_model.get_pipe('ner')
+        if hasattr(ner_pipe, 'labels') and 'CHI_LOCATION' in ner_pipe.labels:  # type: ignore
+            accepted_labels.append('CHI_LOCATION')
+            log.info("Custom 'CHI_LOCATION' label found in model. Will use for extraction.")
 
     locations = [ent.text for ent in doc.ents if ent.label_ in accepted_labels]
     log.info(f"Extracted {len(locations)} potential locations: {locations}")
