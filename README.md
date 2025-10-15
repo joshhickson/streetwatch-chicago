@@ -2,6 +2,23 @@
 
 This repository contains the backend service for a real-time geospatial intelligence pipeline designed to map ICE and CBP activity in Chicago based on publicly available social media data. The project is detailed in the [Automated ICE Map Workflow document](10.04.2025%20Automated%20ICE%20Map%20Workflow.md).
 
+## 🚀 Current Status (October 15, 2025)
+
+**Branch:** `feature/custom-ner-pipeline-fix`  
+**Status:** ✅ **Fully Operational** (using base spaCy model)
+
+### What's Working
+- ✅ **Temporal Extraction** - Extracts event dates/times from text ("yesterday", "2 hours ago")
+- ✅ **Context-Aware Geocoding** - Uses subreddit context for location disambiguation
+- ✅ **Smart Deduplication** - Prevents duplicate source URLs
+- ✅ **NER Location Extraction** - GPE and LOC entities via `en_core_web_sm`
+- ✅ **REST API** - Fully functional endpoints at `/` and `/process-sighting`
+
+### Known Issue: Custom CHI_LOCATION Model
+The custom NER model trained for Chicago-specific locations has training data alignment issues and causes catastrophic forgetting of standard labels. **The system currently operates with the base `en_core_web_sm` model**, which successfully extracts standard locations (cities, states, regions).
+
+See [KNOWN_ISSUES.md](KNOWN_ISSUES.md) and [CURRENT_STATUS_REPORT.md](CURRENT_STATUS_REPORT.md) for detailed analysis.
+
 ## Project Overview
 
 The system is designed as a data pipeline that automates the following processes:
