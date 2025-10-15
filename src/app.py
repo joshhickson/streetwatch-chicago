@@ -57,5 +57,5 @@ if __name__ == '__main__':
         debug=not is_test_env,
         use_reloader=not is_test_env,
         host='0.0.0.0',
-        port=8080
+        port=5000
     )
