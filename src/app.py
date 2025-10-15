@@ -6,6 +6,38 @@ from src.logger import log # Import our new centralized logger
 
 app = Flask(__name__)
 
+@app.route('/', methods=['GET'])
+def home():
+    """API documentation endpoint."""
+    return jsonify({
+        "service": "StreetWatch Chicago - ICE/CBP Activity Mapping API",
+        "version": "1.0",
+        "status": "running",
+        "endpoints": {
+            "/health": {
+                "method": "GET",
+                "description": "Health check endpoint"
+            },
+            "/process-sighting": {
+                "method": "POST",
+                "description": "Process a sighting report and extract location data",
+                "required_fields": ["post_text"],
+                "optional_fields": ["source_url", "context", "post_timestamp_utc"],
+                "example": {
+                    "post_text": "ICE checkpoint at Fullerton and Western yesterday",
+                    "source_url": "http://reddit.com/r/chicago/post123",
+                    "context": "chicago"
+                }
+            }
+        },
+        "features": {
+            "temporal_extraction": "Extracts event dates/times from text using dateparser",
+            "context_aware_geocoding": "Uses subreddit context for location disambiguation",
+            "custom_ner": "Chicago-specific location extraction (CHI_LOCATION label)",
+            "deduplication": "Prevents duplicate source URLs"
+        }
+    })
+
 @app.route('/health', methods=['GET'])
 def health_check():
     """A simple health check endpoint."""
