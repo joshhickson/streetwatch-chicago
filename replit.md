@@ -8,6 +8,23 @@ The architecture follows a four-stage pipeline: Ingestion → Processing & Enric
 
 ## Recent Changes
 
+### October 16, 2025 - CSV Backup System and Data Fetch Success
+
+**Branch**: `feature/custom-ner-pipeline-fix`
+
+**Latest Work**:
+1. Implemented automatic CSV backup system (`src/backup_csv.py`)
+   - Creates timestamped backups before each write operation
+   - 30-day retention policy with max 100 backups
+   - Rollback capability for data recovery
+2. Successfully populated CSV with real ICE/CBP sighting data
+   - 10 new entries from Google Custom Search API
+   - Total database: 34 sightings
+   - All core features verified with live data
+3. Fixed `gcp_fetch.py` endpoint URL (port 8080 → 5000)
+
+**Status**: ✅ System fully operational and tested with real data
+
 ### October 15, 2025 - Pipeline Fixes and Model Issues Resolved
 
 **Branch**: `feature/custom-ner-pipeline-fix`
@@ -19,14 +36,12 @@ The architecture follows a four-stage pipeline: Ingestion → Processing & Enric
 4. Permanently disabled broken custom model - system now uses base `en_core_web_sm` by default
 5. Verified all core features: temporal extraction, context-aware geocoding, deduplication
 
-**Status**: ✅ System fully operational with base spaCy model
-
 **Known Limitations**:
 - Base model sometimes misclassifies specific city names as ORG instead of GPE (e.g., "Evanston")
 - Custom CHI_LOCATION model has catastrophic forgetting issue and is disabled
 - Training data (`data/training_data.jsonl`) has entity span alignment issues
 
-See `KNOWN_ISSUES.md` and `CURRENT_STATUS_REPORT.md` for detailed technical analysis.
+See `KNOWN_ISSUES.md`, `CURRENT_STATUS_REPORT.md`, and `DETAILED_CHANGE_LOG_2025-10-15.md` for detailed technical analysis.
 
 ## User Preferences
 

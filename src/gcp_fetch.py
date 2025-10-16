@@ -7,7 +7,7 @@ from src.logger import log
 # --- Configuration ---
 API_KEY = os.getenv("GOOGLE_API_KEY")
 CUSTOM_SEARCH_ENGINE_ID = os.getenv("CUSTOM_SEARCH_ENGINE_ID")
-PROCESSING_ENDPOINT_URL = "http://localhost:8080/process-sighting"
+PROCESSING_ENDPOINT_URL = "http://localhost:5000/process-sighting"
 
 # The query to search for. This can be refined over time.
 SEARCH_QUERY = "ICE OR CBP OR \"Border Patrol\" sighting in Chicago"
