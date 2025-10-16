@@ -1,0 +1,21 @@
+Based on the pipeline_description.md file you provided, the system fails to extract cross-street locations due to two critical, compounding issues: the system cannot access the detailed location data, and the natural language model cannot correctly identify cross-streets when it does see them.
+
+1. Data Inaccessibility (The Biggest Problem)
+The primary reason for the failure is that the pipeline cannot access the full text of Reddit posts or their comments, which is where most specific locations are mentioned.
+
+Reddit API Blocking: The gcp_fetch.py script is blocked by Reddit because it runs on a cloud IP address, resulting in a 403 Forbidden error. This is the root cause of the data loss.
+
+Reliance on Snippets: As a fallback, the system only processes Google Search snippets, which are truncated to about 150 characters. Any location information mentioned after this cutoff is lost.
+
+Comments are Missed: The document explicitly states that approximately 90% of precise location data is found in the comments, but the current pipeline never sees them. For example, a post might have a vague title like "ICE sighting," but the specific intersection "Fullerton and Western, by the 7-11" is only mentioned in a comment thread, which the system cannot access.
+
+2. Flawed Location Recognition
+Even when a cross-street is present in the limited snippet the system can see, the Named Entity Recognition (NER) model fails to identify it correctly.
+
+Incorrect Classification: The base spaCy model (en_core_web_sm) does not recognize street names or intersections as location entities. Instead, it often misclassifies them as ORG (Organization). For example, in the text "ICE at Fullerton and Western," the model incorrectly identifies "Fullerton" and "Western" as organizations, not locations.
+
+No Geocoding: Because the cross-streets are not tagged as GPE (Geo-Political Entity) or LOC (Location), they are never passed to the Google Geocoding API for conversion into coordinates.
+
+Generic Fallback: When the NER model fails to extract any specific location, the system defaults to using the generic location "Chicago," causing all such entries to cluster at the same city-center coordinates (41.88325, -87.6323879).
+
+In short, the pipeline is missing the most valuable data (comments) and misinterpreting the small amount of data it actually receives (snippets).
