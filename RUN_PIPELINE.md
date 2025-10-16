@@ -11,6 +11,47 @@ This guide explains how to run the StreetWatch Chicago pipeline on your local ma
 - **Git**: For cloning the repository (optional if you already have the code)
 - **Text editor**: VS Code, Sublime, or any code editor
 
+## Cloning the Repository
+
+### Option 1: Clone Without Git LFS (Recommended)
+
+The repository uses Git LFS for large model files, but these files are **not needed** to run the pipeline. The custom model is disabled, and the system uses the base spaCy model instead.
+
+**Skip LFS files when cloning:**
+
+```bash
+# Set environment variable to skip LFS
+GIT_LFS_SKIP_SMUDGE=1 git clone <repository-url>
+cd streetwatch-chicago
+```
+
+**Or if you already cloned and got LFS errors:**
+
+```bash
+cd streetwatch-chicago
+
+# Skip LFS checkout
+git lfs install --skip-smudge
+
+# Pull without LFS files
+git pull
+```
+
+### Option 2: Clone with Git LFS (If Available)
+
+If you have Git LFS installed and the LFS server is accessible:
+
+```bash
+# Install Git LFS first
+git lfs install
+
+# Clone normally
+git clone <repository-url>
+cd streetwatch-chicago
+```
+
+**Note:** The missing LFS files (`models/training_data.spacy`, `models/custom_ner_model/*`) are for a custom NER model that is currently disabled. The pipeline works perfectly without them using the standard spaCy model.
+
 ### Required API Keys
 
 You need three API keys stored as environment variables:
@@ -214,21 +255,31 @@ python -m src.app
 python -m spacy download en_core_web_sm
 ```
 
-**3. "API key not configured"**
+**3. Git LFS errors when cloning**
+
+If you see errors about missing LFS files:
+```bash
+# Clone without LFS (recommended)
+GIT_LFS_SKIP_SMUDGE=1 git clone <repository-url>
+```
+
+The missing model files are not needed - the system uses the base spaCy model.
+
+**4. "API key not configured"**
 ```bash
 # Verify environment variables are set
 echo $GOOGLE_GEOCODE_API_KEY  # macOS/Linux
 echo $env:GOOGLE_GEOCODE_API_KEY  # Windows PowerShell
 ```
 
-**4. All coordinates are (41.88325, -87.6323879)**
+**5. All coordinates are (41.88325, -87.6323879)**
 
 This is the default Chicago center coordinate, which means:
 - No specific location was found in the text
 - The text snippet from Google Search is too short
 - Try running the Reddit export script locally to get full post content
 
-**5. "Failed to geocode location"**
+**6. "Failed to geocode location"**
 
 Check:
 - Google Geocoding API is enabled in Cloud Console
