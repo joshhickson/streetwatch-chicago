@@ -7,6 +7,11 @@ from datetime import datetime
 from pathlib import Path
 from dateparser import search as dateparser_search, parse as dateparser_parse
 from src.logger import log
+from src.location_enhancer import (
+    ChicagoLocationExtractor,
+    is_likely_chicago_location,
+    enhance_geocoding_query
+)
 
 # --- Model and API Configuration ---
 GOOGLE_API_KEY = os.getenv("GOOGLE_GEOCODE_API_KEY")
@@ -70,8 +75,9 @@ def geocode_location(location_text, context=None):
         log.info(f"INTEGRATION_TESTING mode: Returning mock geocode for location='{location_text}' with context='{context}'")
         return {"lat": 40.6331249, "lng": -89.3985283, "bounding_box": {"northeast": {"lat": 42.508338, "lng": -87.524529}, "southwest": {"lat": 36.970298, "lng": -91.513079}}}
 
+    # Use enhanced geocoding query
     geo_hint = get_geocoding_hint(context)
-    full_address = f"{location_text}, {geo_hint}" if geo_hint else location_text
+    full_address = enhance_geocoding_query(location_text, geo_hint)
     log.info(f"Geocoding location: '{full_address}'")
 
     if not GOOGLE_API_KEY:
@@ -161,6 +167,15 @@ def process_sighting_text(post_text, source_url, post_timestamp_utc, agency='ICE
         log.warning(f"Duplicate post: Source {source_url} has already been processed. Skipping.")
         return 0
 
+    # ENHANCED: Use pattern-based extraction first
+    location_extractor = ChicagoLocationExtractor()
+    pattern_locations = location_extractor.extract_all_locations(post_text)
+    prioritized_locations = location_extractor.prioritize_locations(pattern_locations)
+    
+    if prioritized_locations:
+        log.info(f"Pattern extraction found {len(prioritized_locations)} locations: {prioritized_locations}")
+    
+    # Run NER model
     doc = nlp_model(post_text)
 
     # Dynamically set the location labels to look for
@@ -171,11 +186,40 @@ def process_sighting_text(post_text, source_url, post_timestamp_utc, agency='ICE
             accepted_labels.append('CHI_LOCATION')
             log.info("Custom 'CHI_LOCATION' label found in model. Will use for extraction.")
 
-    locations = [ent.text for ent in doc.ents if ent.label_ in accepted_labels]
-    log.info(f"Extracted {len(locations)} potential locations: {locations}")
+    # Extract NER locations
+    ner_locations = [ent.text for ent in doc.ents if ent.label_ in accepted_labels]
+    
+    # ENHANCED: Also check ORG entities that might be Chicago locations
+    org_entities = [ent.text for ent in doc.ents if ent.label_ == 'ORG']
+    for org_text in org_entities:
+        if is_likely_chicago_location(org_text, 'ORG'):
+            log.info(f"Found ORG entity '{org_text}' that's likely a Chicago location")
+            ner_locations.append(org_text)
+    
+    log.info(f"NER extracted {len(ner_locations)} potential locations: {ner_locations}")
+
+    # ENHANCED: Combine pattern-based and NER locations, prioritizing patterns
+    all_locations = []
+    seen = set()
+    
+    # Add pattern-based locations first (most reliable)
+    for loc in prioritized_locations:
+        loc_lower = loc.lower()
+        if loc_lower not in seen:
+            all_locations.append(loc)
+            seen.add(loc_lower)
+    
+    # Add NER locations that aren't already found
+    for loc in ner_locations:
+        loc_lower = loc.lower()
+        if loc_lower not in seen:
+            all_locations.append(loc)
+            seen.add(loc_lower)
+    
+    log.info(f"Combined extraction: {len(all_locations)} total locations to try: {all_locations}")
 
     processed_count = 0
-    for loc in locations:
+    for loc in all_locations:
         normalized_loc = normalize_text(loc)
         coords = geocode_location(normalized_loc, context=context)
         if coords:
@@ -193,4 +237,8 @@ def process_sighting_text(post_text, source_url, post_timestamp_utc, agency='ICE
             processed_count += 1
             log.info(f"Successfully processed first valid location '{normalized_loc}'. Halting search for this source.")
             break
+    
+    if processed_count == 0:
+        log.warning(f"No valid geocodable locations found for source: {source_url}")
+    
     return processed_count
