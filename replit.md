@@ -8,7 +8,7 @@ The architecture follows a four-stage pipeline: Ingestion → Processing & Enric
 
 ## Recent Changes
 
-### October 16, 2025 - CSV Backup System and Data Fetch Success
+### October 16, 2025 - CSV Backup System and Reddit Export Tools
 
 **Branch**: `feature/custom-ner-pipeline-fix`
 
@@ -22,8 +22,15 @@ The architecture follows a four-stage pipeline: Ingestion → Processing & Enric
    - Total database: 34 sightings
    - All core features verified with live data
 3. Fixed `gcp_fetch.py` endpoint URL (port 8080 → 5000)
+4. Created Reddit post export tools for Gemini analysis
+   - `export_reddit_posts.py`: Python script to export Reddit posts as markdown
+   - `REDDIT_EXPORT_INSTRUCTIONS.md`: Comprehensive usage guide
+   - `pipeline_description.md`: Complete pipeline documentation for AI analysis
+   - Enables identification of location extraction failures
 
-**Status**: ✅ System fully operational and tested with real data
+**Critical Discovery**: Reddit API blocks cloud IPs (403 errors), preventing access to full post content and comments. This is why cross-street information is not being extracted - system only receives Google Search snippets (~150 chars) instead of full posts with detailed location data in comments.
+
+**Status**: ✅ System operational; Export tools ready for local execution
 
 ### October 15, 2025 - Pipeline Fixes and Model Issues Resolved
 
