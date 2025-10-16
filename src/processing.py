@@ -118,9 +118,17 @@ def extract_event_timestamp(text, base_time):
     return None
 
 def write_to_csv(data_row):
-    """Appends a new data row to the master CSV file."""
+    """Appends a new data row to the master CSV file with automatic backup."""
+    from src.backup_csv import create_backup
+    
     os.makedirs(os.path.dirname(DATA_FILE), exist_ok=True)
     file_exists = os.path.isfile(DATA_FILE)
+    
+    if file_exists:
+        backup_path = create_backup(DATA_FILE)
+        if backup_path:
+            log.info(f"Backup created before write: {backup_path}")
+    
     fieldnames = ['Title', 'Latitude', 'Longitude', 'Timestamp', 'Description', 'SourceURL', 'VideoURL', 'Agency', 'Origin', 'BoundingBox']
     with open(DATA_FILE, 'a', newline='', encoding='utf-8') as csvfile:
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames, extrasaction='ignore')
